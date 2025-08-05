@@ -1,4 +1,4 @@
 # MetodosComputacionales2
-
-
-jaja xd
+Carlos Peralta
+Carlos Tibaduiza
+JuanFelipe Lozano
