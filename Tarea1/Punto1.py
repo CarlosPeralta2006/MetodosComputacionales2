@@ -5,6 +5,7 @@ archivos = glob.glob("Data/mammography_spectra/Mo_unfiltered_10kV-50kV/*.dat")  
 
 for archivo in archivos:
     Mo = pd.read_csv(archivo, sep=r"\s+", header=None, names=["Energía", "Fotones"], skiprows=15, encoding="latin1")
+    
 archivos2 = glob.glob("Data/mammography_spectra/Rh_unfiltered_10kV-50kV/*.dat") 
 
 for archivo2 in archivos2:
