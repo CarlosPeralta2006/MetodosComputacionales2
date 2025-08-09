@@ -1,4 +1,3 @@
-
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -8,3 +7,7 @@ import os
 from google.colab import drive
 import scipy.optimize as spo
 import math
+
+bash 
+
+pip install pandas numpy
