@@ -23,3 +23,4 @@ for archivo3 in archivos3:
     arch3 = archivo3[50:-4]
     W[arch3] = W_ind
 
+print(W)
