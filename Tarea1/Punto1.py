@@ -14,3 +14,5 @@ archivos3 = glob.glob("Data/mammography_spectra/W_unfiltered_10kV-50kV/*.dat")
 
 for archivo3 in archivos3:
     W = pd.read_csv(archivo3, sep=r"\s+", header=None, names=["Energía", "Fotones"], skiprows=15, encoding="latin1")
+    
+print(Mo)
