@@ -149,3 +149,36 @@ dic_continuo = {"Mo": Mo_continuo, "Rh": Rh_continuo, "W": W_continuo}
 dic_spline   = {"Mo": Mo_inter,   "Rh": Rh_inter,   "W": W_inter}
 
 graficar_2b(dic_continuo, dic_spline, step=2)
+
+print(dic_spline)
+
+def métricas(dic_spline):
+    resutl = {}
+    
+    for elem, dic_spl in dic_spline.items():  # itera sobre los elementos
+        datos = []
+        for kv, df in dic_spl.items():  # obtiene los valores kV y DataFrame con Energía y Fotones
+            x = df["Energía"].values
+            y = df["Fotones"].values
+            
+            spl = UnivariateSpline(x,y,s=0)
+            
+            x_new = np.linspace(x.min(), x.max(), 5000)
+            y_new = spl(x_new)  # evaluar el spline en la nueva grilla
+            
+            # máximo 
+            y_max = np.max(y_new)
+            indice_max = np.argmax(y_new)  # indice del valor máximo en y_new
+            x_max = x_new[indice_max]
+            
+            # FWHM
+            
+            half_max = y_max / 2
+            
+            
+            
+            
+            
+            
+    
+    
