@@ -79,6 +79,7 @@ def graficar_2a(dic_originales, dic_continuos, dic_picos):
     plt.savefig("2.a.pdf", bbox_inches="tight", pad_inches=0.1)
     plt.show()
 
+
 dic_originales = {"Mo": Mo, "Rh": Rh, "W": W}
 dic_continuos = {"Mo": Mo_continuo, "Rh": Rh_continuo, "W": W_continuo}
 dic_picos = {"Mo": Mo_picos, "Rh": Rh_picos, "W": W_picos}
