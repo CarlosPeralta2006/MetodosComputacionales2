@@ -1,6 +1,6 @@
 from Punto1 import data
 from scipy.signal import find_peaks
-from scipy.interpolate import PchipInterpolator
+from scipy.interpolate import UnivariateSpline
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -51,7 +51,6 @@ def graficar_2a(dic_originales, dic_continuos, dic_picos):
     elementos = ["Mo", "Rh", "W"]
     titulos = {"Mo": "Molibdeno (Mo)", "Rh": "Rodio (Rh)", "W": "Tungsteno (W)"}
     
-    # kV que quieres usar para cada elemento
     kv_labels = {"Mo": "34kV", "Rh": "41kV", "W": "16kV"}
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=True)
@@ -88,22 +87,65 @@ graficar_2a(dic_originales, dic_continuos, dic_picos)
 
 # - - - PUNTO 2.b - - -
 
-def interpolar(dict_continuo):
-    dict_inter = {}  # almacena informacion interpolada
-    for kv, df in dict_continuo.items():
-        validos = df["Fotones"].notna()  # toma los que no son NaN
-        x_valid = df["Energía"][validos].values
-        y_valid = df["Fotones"][validos].values
-    
-        inter = PchipInterpolator(x_valid, y_valid)
-        y_inter = inter(df["Energía"].values)
-    
-        dict_inter[kv] = pd.DataFrame({
-            "Energía": df["Energía"].values,
-            "Fotones": y_inter
-        })
-    return dict_inter
+def spline_diccionario(dic_continuo, s_factor=0.02, n_fine=2000):
+    dic_spline = {}
+    for kv, df_cont in dic_continuo.items():
+        mask = df_cont["Fotones"].notna()
+        x_valid = df_cont["Energía"][mask].values
+        y_valid = df_cont["Fotones"][mask].values
 
-Mo_interp = interpolar(Mo_continuo)
-Rh_interp = interpolar(Rh_continuo)
-W_interp  = interpolar(W_continuo)
+        if len(x_valid) < 4:
+            dic_spline[kv] = pd.DataFrame({"Energía": df_cont["Energía"], "Fotones": [np.nan]*len(df_cont)})
+            continue
+
+        # Ajuste spline suavizado
+        s_val = s_factor * len(x_valid)  # proporcional a número de puntos
+        spline = UnivariateSpline(x_valid, y_valid, s=s_val)
+
+        # Evaluar sobre la grilla original (para comparación directa)
+        y_spline = spline(df_cont["Energía"].values)
+
+        dic_spline[kv] = pd.DataFrame({
+            "Energía": df_cont["Energía"].values,
+            "Fotones": y_spline
+        })
+    return dic_spline
+
+Mo_inter = spline_diccionario(Mo_continuo)
+Rh_inter = spline_diccionario(Rh_continuo)
+W_inter = spline_diccionario(W_continuo)
+
+def graficar_2b(dic_continuo, dic_spline, filename="2.b.pdf", step=2):
+    elementos = ["Mo", "Rh", "W"]
+    titulos = {"Mo": "Molibdeno (Mo)", "Rh": "Rodio (Rh)", "W": "Tungsteno (W)"}
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=True)
+
+    kv_labels = {"Mo": "34kV", "Rh": "41kV", "W": "16kV"}
+    
+    for ax, elem in zip(axes, elementos):
+        dic_cont = dic_continuos[elem]
+        dic_spl  = dic_spline[elem]
+
+        df_cont = dic_cont[kv_labels[elem]]
+        df_spl  = dic_spl[kv_labels[elem]]
+        
+        #ax.scatter(df_cont["Energía"], df_cont["Fotones"], color="orange", s=12, label="Continuo sin picos")
+        ax.plot(df_spl["Energía"], df_spl["Fotones"], color="blue", lw=1.5, label="Continuo sin picos")
+
+        ax.set_title(f"{titulos[elem]} ({kv_labels[elem]})", fontsize=14, weight="bold")
+        ax.set_xlabel("Energía (keV)", fontsize=12)
+        ax.grid(True, linestyle="--", alpha=0.6)
+
+    axes[0].set_ylabel("Conteo de fotones (u.a.)", fontsize=12)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=10)
+
+    plt.subplots_adjust(top=1, bottom=0.15, wspace=0.15)
+    plt.savefig(filename, bbox_inches="tight", pad_inches=0.1)
+    plt.show()
+    
+dic_continuo = {"Mo": Mo_continuo, "Rh": Rh_continuo, "W": W_continuo}    
+dic_spline   = {"Mo": Mo_inter,   "Rh": Rh_inter,   "W": W_inter}
+
+graficar_2b(dic_continuo, dic_spline, step=2)
