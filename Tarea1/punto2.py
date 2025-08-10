@@ -1,81 +1,87 @@
+from Punto1 import data
 from scipy.signal import find_peaks
-import glob
-import pandas as pd
+from scipy.interpolate import PchipInterpolator
 import matplotlib.pyplot as plt
 import numpy as np
-from Punto1 import data
+import pandas as pd
 
-# Obtener los datos
 spectra = data()
-Mo, Rh, W = spectra
+Mo, Rh, W = spectra   # tomar la info original
 
-from scipy.signal import find_peaks
+# - - - PUNTO 2.a - - - 
 
-# Función para detectar los índices de los picos y sus zonas
-def detectar_zona_picos(df, factor_height=0.15, factor_prom=0.08, factor_bajo=0.35):
-    x = df['Energía'].values
-    y = df['Fotones'].values
-    max_val = np.max(y)
+def rem_picos(dic_elemento, prominence=0.13, ancho=2):  # valores óptimos por tanteo
+    
+    dict_continuo = {}  # dict que tendrá los puntos "continuos"
+    dict_picos = {}     # dict que tendrá los puntos que se eliminarán pertenecientes a picos
 
-    # Detectar picos principales
-    peaks, _ = find_peaks(
-        y,
-        height=factor_height * max_val,
-        prominence=factor_prom * max_val,
-        distance=2
-    )
+    for kv, df in dic_elemento.items():  # estructura de los diccionarios: llave: hilovoltios, Info: df con energía y fotones
+        x = df["Energía"].values
+        y = df["Fotones"].values
 
-    pico_indices = []
-    for pk in peaks:
-        altura_max = y[pk]
-        umbral_bajo = factor_bajo * altura_max
-        # Izquierda
-        left = pk
-        while left > 0 and y[left] > umbral_bajo:
-            pico_indices.append(left)
-            left -= 1
-        # Centro
-        pico_indices.append(pk)
-        # Derecha
-        right = pk
-        while right < len(y)-1 and y[right] > umbral_bajo:
-            pico_indices.append(right)
-            right += 1
+        prom = prominence * np.max(y)
+        peaks, _ = find_peaks(y, prominence=prom)
 
-    return sorted(set(pico_indices))
+        df_fil = df.copy()  # copia
+        picos_guardados = []
 
-# Función para generar 2.a.pdf
-def plot_remove_peaks(Mo, Rh, W):
-    elementos = {"Molibdeno (Mo)": Mo, "Rodio (Rh)": Rh, "Tungsteno (W)": W}
+        for p in peaks:
+            left_idx = max(p - ancho, 0)
+            right_idx = min(p + ancho, len(y) - 1)  # análisis alrededor 
+
+            # guardar valores eliminados
+            for idx in range(left_idx, right_idx + 1):
+                picos_guardados.append({"Energía": x[idx], "Fotones": y[idx]})
+
+            # eliminar del continuo
+            df_fil.loc[left_idx:right_idx, "Fotones"] = np.nan  # asigna valor NaN (usado luego)
+
+        # guardar en los nuevos diccionarios
+        dict_continuo[kv] = df_fil
+        dict_picos[kv] = pd.DataFrame(picos_guardados)
+
+    return dict_continuo, dict_picos
+
+# info para graficar
+Mo_continuo, Mo_picos = rem_picos(Mo)
+Rh_continuo, Rh_picos = rem_picos(Rh)
+W_continuo, W_picos   = rem_picos(W)
+
+def graficar_2a(dic_originales, dic_continuos, dic_picos):
+    elementos = ["Mo", "Rh", "W"]
+    titulos = {"Mo": "Molibdeno (Mo)", "Rh": "Rodio (Rh)", "W": "Tungsteno (W)"}
+    
+    # kV que quieres usar para cada elemento
+    kv_labels = {"Mo": "30kV", "Rh": "15kV", "W": "40kV"}
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=True)
 
-    for ax, (nombre, dicc) in zip(axes, elementos.items()):
-        voltajes = sorted(dicc.keys())
-        voltajes_filtrados = voltajes[::2]  # cada 2 kV
+    for ax, elem in zip(axes, elementos):
+        dic_orig = dic_originales[elem]
+        dic_cont = dic_continuos[elem]
+        dic_peak = dic_picos[elem]
 
-        colores = plt.cm.plasma(np.linspace(0, 1, len(voltajes_filtrados)))
+        df_orig = dic_orig[kv_labels[elem]]
+        df_cont = dic_cont[kv_labels[elem]]
+        df_peak = dic_peak[kv_labels[elem]]
 
-        for color, kv in zip(colores, voltajes_filtrados):
-            df = dicc[kv]
-            pico_indices = detectar_zona_picos(df)
+        ax.plot(df_orig["Energía"], df_orig["Fotones"], color="black", lw=1)
+        ax.scatter(df_peak["Energía"], df_peak["Fotones"], color="red", s=15, label="Picos removidos")
 
-            # Graficar espectro original
-            ax.plot(df["Energía"], df["Fotones"], color=color, linewidth=1.2)
-            # Marcar puntos de pico
-            ax.plot(df["Energía"].iloc[pico_indices],
-                    df["Fotones"].iloc[pico_indices],
-                    'ro', markersize=2)
-
-        ax.set_title(nombre, fontsize=14, weight="bold")
+        ax.set_title(f"{titulos[elem]} ({kv_labels[elem]})", fontsize=14, weight="bold")
         ax.set_xlabel("Energía (keV)", fontsize=12)
-        ax.grid(True, linestyle='--', alpha=0.6)
+        ax.grid(True, linestyle="--", alpha=0.6)
 
     axes[0].set_ylabel("Conteo de fotones (u.a.)", fontsize=12)
-    plt.subplots_adjust(top=1.0, bottom=0.1, wspace=0.15)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=3, fontsize=11)
+
+    plt.subplots_adjust(top=1, bottom=0.15, wspace=0.15)
     plt.savefig("2.a.pdf", bbox_inches="tight", pad_inches=0.1)
     plt.show()
-    plt.close()
 
-# Generar el punto 2.a
-plot_remove_peaks(Mo, Rh, W)
+dic_originales = {"Mo": Mo, "Rh": Rh, "W": W}
+dic_continuos = {"Mo": Mo_continuo, "Rh": Rh_continuo, "W": W_continuo}
+dic_picos = {"Mo": Mo_picos, "Rh": Rh_picos, "W": W_picos}
+
+graficar_2a(dic_originales, dic_continuos, dic_picos)
