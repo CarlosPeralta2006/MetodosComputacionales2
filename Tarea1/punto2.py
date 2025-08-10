@@ -153,7 +153,7 @@ graficar_2b(dic_continuo, dic_spline, step=2)
 print(dic_spline)
 
 def métricas(dic_spline):
-    resutl = {}
+    result = {}
     
     for elem, dic_spl in dic_spline.items():  # itera sobre los elementos
         datos = []
@@ -175,8 +175,26 @@ def métricas(dic_spline):
             
             half_max = y_max / 2
             
+            cruces = np.where(np.diff(np.sign(y_new - half_max)) != 0)[0]  
             
-            
+            if len(cruces) >= 2:
+                x_izq = x_new[cruces[0]]
+                x_der = x_new[cruces[-1]]
+                fwhm = x_der - x_izq
+            else:
+                fwhm = np.nan 
+            datos.append({
+                "kV": kv, "y_max": y_max, "x_max":x_max, "FWHM": fwhm
+            })
+            df_result = pd.DataFrame(datos)
+        try:
+            df_result["kV_num"] = df_result["kV"].str.replace("kV", "").astype(float)
+            df_result = df_result.sort_values("kV_num")
+        except:
+            pass
+        result[elem] = df_result.reset_index(drop=True)
+
+    return result
             
             
             
