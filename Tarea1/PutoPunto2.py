@@ -1,11 +1,14 @@
 from Punto1 import data
 from scipy.signal import find_peaks
+from scipy.interpolate import PchipInterpolator
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 spectra = data()
 Mo, Rh, W = spectra   # tomar la info original
+
+# - - - PUNTO 2.a - - - 
 
 def rem_picos(dic_elemento, prominence=0.13, ancho=2):  # valores óptimos por tanteo
     
@@ -31,7 +34,7 @@ def rem_picos(dic_elemento, prominence=0.13, ancho=2):  # valores óptimos por t
                 picos_guardados.append({"Energía": x[idx], "Fotones": y[idx]})
 
             # eliminar del continuo
-            df_fil.loc[left_idx:right_idx, "Fotones"] = np.nan
+            df_fil.loc[left_idx:right_idx, "Fotones"] = np.nan  # asigna valor NaN (usado luego)
 
         # guardar en los nuevos diccionarios
         dict_continuo[kv] = df_fil
@@ -57,12 +60,13 @@ def graficar_2a(dic_originales, dic_continuos, dic_picos):
         dic_peak = dic_picos[elem]
 
         # elección de un voltaje representativo (el del medio) o ponerlo manual
-        kvs = sorted(dic_orig.keys())
-        kv = kvs[len(kvs)//2]  
+        # kvs = sorted(dic_orig.keys())
+        # kv = kvs[len(kvs)//2] 
+         
         # datos de ese kV seleccionado
-        df_orig = dic_orig[kv]
-        df_cont = dic_cont[kv]
-        df_peak = dic_peak[kv]
+        df_orig = dic_orig["30kV"]
+        df_cont = dic_cont["15kV"]
+        df_peak = dic_peak["40kV"]
 
         ax.plot(df_orig["Energía"], df_orig["Fotones"], color="black", lw=1)
         ax.scatter(df_peak["Energía"], df_peak["Fotones"], color="red", s=15, label="Picos removidos")
@@ -80,8 +84,31 @@ def graficar_2a(dic_originales, dic_continuos, dic_picos):
     plt.show()
 
 
-dic_originales = {"Mo": Mo, "Rh": Rh, "W": W}
-dic_continuos = {"Mo": Mo_continuo, "Rh": Rh_continuo, "W": W_continuo}
-dic_picos = {"Mo": Mo_picos, "Rh": Rh_picos, "W": W_picos}
+dic_originales = {"Mo": Mo, "Rh": Rh, "W": W}  # info original de los .dat
+dic_continuos = {"Mo": Mo_continuo, "Rh": Rh_continuo, "W": W_continuo}  # usados para el b
+dic_picos = {"Mo": Mo_picos, "Rh": Rh_picos, "W": W_picos}  # puntos eliminados
 
 graficar_2a(dic_originales, dic_continuos, dic_picos)
+
+# - - - PUNTO 2.b - - -
+
+def interpolar(dict_continuo):
+    dict_inter = {}  # almacena informacion interpolada
+    for kv, df in dict_continuo.items():
+        validos = df["Fotones"].notna()  # toma los que no son NaN
+        x_valid = df["Energía"][validos].values
+        y_valid = df["Fotones"][validos].values
+    
+        inter = PchipInterpolator(x_valid, y_valid)
+        y_inter = inter(df["Energía"].values)
+    
+        dict_inter[kv] = pd.DataFrame({
+            "Energía": df["Energía"].values,
+            "Fotones": y_inter
+        })
+    return dict_inter
+
+Mo_interp = interpolar(Mo_continuo)
+Rh_interp = interpolar(Rh_continuo)
+W_interp  = interpolar(W_continuo)
+
