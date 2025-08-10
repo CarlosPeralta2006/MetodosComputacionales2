@@ -52,7 +52,7 @@ def graficar_2a(dic_originales, dic_continuos, dic_picos):
     titulos = {"Mo": "Molibdeno (Mo)", "Rh": "Rodio (Rh)", "W": "Tungsteno (W)"}
     
     # kV que quieres usar para cada elemento
-    kv_labels = {"Mo": "30kV", "Rh": "15kV", "W": "40kV"}
+    kv_labels = {"Mo": "34kV", "Rh": "41kV", "W": "16kV"}
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=True)
 
