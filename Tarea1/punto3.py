@@ -13,7 +13,7 @@ fig, axes = plt.subplots(1, 3, figsize=(18, 6))  # 18 pulgadas de ancho x 6 de a
 plt.subplots_adjust(wspace=0.3)  # Espacio entre gráficos
 
 # kV a graficar (el mismo para los 3 elementos)
-kV = '30kV'
+kV = '40kV'
 
 # ---- Gráfico 1: Molibdeno (Mo) ----
 axes[0].plot(Mo[kV]['Energía'], Mo[kV]['Fotones'], 'b-', linewidth=1.5)
@@ -54,5 +54,4 @@ plt.show()
 # Mostrar información de los DataFrames
 for elemento, df in zip(['Mo', 'Rh', 'W'], [Mo[kV], Rh[kV], W[kV]]):
     print(f"\nInformación del DataFrame ({elemento} {kV}):")
-    print(f"Número de filas: {len(df)}")
     print(f"Rango de energía: {df['Energía'].min()} - {df['Energía'].max()} keV")
