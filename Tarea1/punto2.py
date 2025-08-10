@@ -107,3 +107,4 @@ def interpolar(dict_continuo):
 Mo_interp = interpolar(Mo_continuo)
 Rh_interp = interpolar(Rh_continuo)
 W_interp  = interpolar(W_continuo)
+
