@@ -39,3 +39,5 @@ print("\nPrimeras 5 filas:")
 print(df_primer.head())
 print("\nÚltimas 5 filas:")
 print(df_primer.tail())
+
+#casa
