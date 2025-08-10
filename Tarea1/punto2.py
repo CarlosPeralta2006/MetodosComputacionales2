@@ -87,7 +87,7 @@ graficar_2a(dic_originales, dic_continuos, dic_picos)
 
 # - - - PUNTO 2.b - - -
 
-def spline_diccionario(dic_continuo, s_factor=0.03, n_fine=2000):
+def spline_diccionario(dic_continuo, s_factor=0.03):
     dic_spline = {}
     for kv, df_cont in dic_continuo.items():
         mask = df_cont["Fotones"].notna()
@@ -150,9 +150,9 @@ dic_spline   = {"Mo": Mo_inter,   "Rh": Rh_inter,   "W": W_inter}
 
 graficar_2b(dic_continuo, dic_spline, step=2)
 
-print(dic_spline)
+# - - - PUNTO 2c - - - 
 
-def métricas(dic_spline):
+def metricas(dic_spline):
     result = {}
     
     for elem, dic_spl in dic_spline.items():  # itera sobre los elementos
@@ -195,8 +195,53 @@ def métricas(dic_spline):
         result[elem] = df_result.reset_index(drop=True)
 
     return result
-            
-            
+
+resultados_metricas = metricas(dic_spline)
+
+def graficar_2c(resultados_metricas):
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    colores = {"Mo": "tab:blue", "Rh": "tab:orange", "W": "tab:green"}
+
+    ax = axes[0, 0]
+    for elem, df in resultados_metricas.items():
+        ax.plot(df["kV_num"], df["y_max"], marker="o", label=elem, color=colores[elem])
+    ax.set_title("Altura máxima vs Voltaje del tubo")
+    ax.set_xlabel("Voltaje (kV)")
+    ax.set_ylabel("Conteo de fotones máximo (u.a.)")
+    ax.grid(True, linestyle="--", alpha=0.6)
+
+    ax = axes[0, 1]
+    for elem, df in resultados_metricas.items():
+        ax.plot(df["kV_num"], df["x_max"], marker="o", label=elem, color=colores[elem])
+    ax.set_title("Energía del máximo vs Voltaje del tubo")
+    ax.set_xlabel("Voltaje (kV)")
+    ax.set_ylabel("Energía del máximo (keV)")
+    ax.grid(True, linestyle="--", alpha=0.6)
+
+    ax = axes[1, 0]
+    for elem, df in resultados_metricas.items():
+        ax.plot(df["kV_num"], df["FWHM"], marker="o", label=elem, color=colores[elem])
+    ax.set_title("FWHM vs Voltaje del tubo")
+    ax.set_xlabel("Voltaje (kV)")
+    ax.set_ylabel("FWHM (keV)")
+    ax.grid(True, linestyle="--", alpha=0.6)
+
+    ax = axes[1, 1]
+    for elem, df in resultados_metricas.items():
+        ax.plot(df["x_max"], df["y_max"], marker="o", label=elem, color=colores[elem])
+    ax.set_title("Altura máxima vs Energía del máximo")
+    ax.set_xlabel("Energía del máximo (keV)")
+    ax.set_ylabel("Conteo de fotones máximo (u.a.)")
+    ax.grid(True, linestyle="--", alpha=0.6)
+
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=3, fontsize=12)
+    plt.subplots_adjust(top=1, bottom=0.15, wspace=0.25)
+    plt.savefig("2.c.pdf", bbox_inches="tight", pad_inches=0.1)
+    plt.show()
+    
+graficar_2c(resultados_metricas)
             
     
     
