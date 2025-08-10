@@ -51,6 +51,7 @@ def graficar_2a(dic_originales, dic_continuos, dic_picos):
     elementos = ["Mo", "Rh", "W"]
     titulos = {"Mo": "Molibdeno (Mo)", "Rh": "Rodio (Rh)", "W": "Tungsteno (W)"}
     
+    # kV que quieres usar para cada elemento
     kv_labels = {"Mo": "34kV", "Rh": "41kV", "W": "16kV"}
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=True)
@@ -150,7 +151,7 @@ dic_spline   = {"Mo": Mo_inter,   "Rh": Rh_inter,   "W": W_inter}
 
 graficar_2b(dic_continuo, dic_spline, step=2)
 
-# - - - PUNTO 2c - - - 
+# - - - PUNTO 2.c - - - 
 
 def metricas(dic_spline):
     result = {}
@@ -243,5 +244,3 @@ def graficar_2c(resultados_metricas):
     
 graficar_2c(resultados_metricas)
             
-    
-    
