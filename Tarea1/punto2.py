@@ -85,3 +85,25 @@ dic_continuos = {"Mo": Mo_continuo, "Rh": Rh_continuo, "W": W_continuo}
 dic_picos = {"Mo": Mo_picos, "Rh": Rh_picos, "W": W_picos}
 
 graficar_2a(dic_originales, dic_continuos, dic_picos)
+
+# - - - PUNTO 2.b - - -
+
+def interpolar(dict_continuo):
+    dict_inter = {}  # almacena informacion interpolada
+    for kv, df in dict_continuo.items():
+        validos = df["Fotones"].notna()  # toma los que no son NaN
+        x_valid = df["Energía"][validos].values
+        y_valid = df["Fotones"][validos].values
+    
+        inter = PchipInterpolator(x_valid, y_valid)
+        y_inter = inter(df["Energía"].values)
+    
+        dict_inter[kv] = pd.DataFrame({
+            "Energía": df["Energía"].values,
+            "Fotones": y_inter
+        })
+    return dict_inter
+
+Mo_interp = interpolar(Mo_continuo)
+Rh_interp = interpolar(Rh_continuo)
+W_interp  = interpolar(W_continuo)
