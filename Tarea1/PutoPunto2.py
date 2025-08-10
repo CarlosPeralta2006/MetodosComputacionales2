@@ -62,7 +62,7 @@ def graficar_2a(dic_originales, dic_continuos, dic_picos):
         # elección de un voltaje representativo (el del medio) o ponerlo manual
         # kvs = sorted(dic_orig.keys())
         # kv = kvs[len(kvs)//2] 
-         
+        kVs = ["30kV", "15kV", "40kV"]
         # datos de ese kV seleccionado
         df_orig = dic_orig["30kV"]
         df_cont = dic_cont["15kV"]
