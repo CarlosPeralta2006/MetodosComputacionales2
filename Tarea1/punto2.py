@@ -131,7 +131,6 @@ def graficar_2b(dic_continuo, dic_spline, filename="2.b.pdf", step=2):
         df_cont = dic_cont[kv_labels[elem]]
         df_spl  = dic_spl[kv_labels[elem]]
         
-        #ax.scatter(df_cont["Energía"], df_cont["Fotones"], color="orange", s=12, label="Continuo sin picos")
         ax.plot(df_spl["Energía"], df_spl["Fotones"], color="blue", lw=1.5, label="Continuo sin picos")
 
         ax.set_title(f"{titulos[elem]} ({kv_labels[elem]})", fontsize=14, weight="bold")
@@ -238,7 +237,7 @@ def graficar_2c(resultados_metricas):
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=3, fontsize=12)
-    plt.subplots_adjust(top=1, bottom=0.15, wspace=0.25)
+    plt.subplots_adjust(top=1, bottom=0.10, wspace=0.25)
     plt.savefig("2.c.pdf", bbox_inches="tight", pad_inches=0.1)
     plt.show()
     
