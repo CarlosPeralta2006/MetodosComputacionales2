@@ -87,7 +87,7 @@ graficar_2a(dic_originales, dic_continuos, dic_picos)
 
 # - - - PUNTO 2.b - - -
 
-def spline_diccionario(dic_continuo, s_factor=0.02, n_fine=2000):
+def spline_diccionario(dic_continuo, s_factor=0.03, n_fine=2000):
     dic_spline = {}
     for kv, df_cont in dic_continuo.items():
         mask = df_cont["Fotones"].notna()
