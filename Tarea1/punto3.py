@@ -77,13 +77,14 @@ def graficar_picos_zoom(picos_restantes, xlims, filename="3.a.pdf"):
 
     axes[0].set_ylabel("Conteo de fotones (u.a.)", fontsize=12)
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=10, frameon=False)
+    
 
     plt.subplots_adjust(top=1.0, bottom=0.25, wspace=0.15)
     plt.savefig(filename, bbox_inches="tight", pad_inches=0.1)
     plt.show()
     plt.close()
 # --- Definir límites x para zoom en cada subplot (ajusta según tus picos) ---
+
 xlims_zoom = {
     "Molibdeno (Mo)": (16.5, 20.5),
     "Rodio (Rh)": (19.5, 23.4),
@@ -95,3 +96,75 @@ graficar_picos_zoom(picos_restantes, xlims_zoom)
 
 
 
+
+
+# --- Función Gaussiana ---
+def gauss(x, A, x0, sigma):
+    return A * np.exp(-(x - x0)**2 / (2 * sigma**2))
+
+# --- Ajustar pico más alto para cada espectro ---
+resultados = {elem: [] for elem in picos_restantes.keys()}
+
+for elem, dic_voltajes in picos_restantes.items():
+    for voltaje, df in dic_voltajes.items():
+        x = df["Energía"].values
+        y = df["Fotones"].values
+
+        # Encontrar pico más alto
+        peaks, _ = find_peaks(y)
+        if len(peaks) == 0:
+            continue
+        idx_max = peaks[np.argmax(y[peaks])]
+
+        # Tomar ventana alrededor del pico
+        ancho_ventana = 5  # puntos antes y después
+        i_min = max(0, idx_max - ancho_ventana)
+        i_max = min(len(x), idx_max + ancho_ventana + 1)
+
+        x_fit = x[i_min:i_max]
+        y_fit = y[i_min:i_max]
+
+        # Estimaciones iniciales para el ajuste
+        A0 = y[idx_max]
+        x0_0 = x[idx_max]
+        sigma0 = (x_fit.max() - x_fit.min()) / 4
+
+        try:
+            popt, _ = curve_fit(gauss, x_fit, y_fit, p0=[A0, x0_0, sigma0])
+            A, x0, sigma = popt
+            FWHM = 2.355 * abs(sigma)  # relación gaussiana
+            resultados[elem].append({"Voltaje": voltaje, "Altura": A, "Posicion": x0, "FWHM": FWHM})
+        except RuntimeError:
+            continue
+
+# --- Convertir resultados a DataFrames ---
+df_resultados = {elem: pd.DataFrame(val) for elem, val in resultados.items()}
+
+# --- Graficar Altura y FWHM vs Voltaje ---
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+# Colores para cada elemento
+colores = {"Mo": "red", "Rh": "blue", "W": "green"}
+
+for elem, df_res in df_resultados.items():
+    if df_res.empty:
+        continue
+    df_res = df_res.sort_values("Voltaje")
+    axes[0].plot(df_res["Voltaje"], df_res["Altura"], marker="o", color=colores[elem], label=elem)
+    axes[1].plot(df_res["Voltaje"], df_res["FWHM"], marker="o", color=colores[elem], label=elem)
+
+axes[0].set_xlabel("Voltaje del tubo (kV)")
+axes[0].set_ylabel("Altura del pico (u.a.)")
+axes[0].set_title("Altura vs Voltaje")
+axes[0].grid(True)
+axes[0].legend()
+
+axes[1].set_xlabel("Voltaje del tubo (kV)")
+axes[1].set_ylabel("Ancho a media altura (keV)")
+axes[1].set_title("FWHM vs Voltaje")
+axes[1].grid(True)
+axes[1].legend()
+
+plt.tight_layout()
+plt.savefig("3.b.pdf", bbox_inches="tight")
+plt.show()
