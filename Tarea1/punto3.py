@@ -97,6 +97,77 @@ graficar_picos_zoom(picos_restantes, xlims_zoom)
 
 
 
+# --- Función Gaussiana para el ajuste ---
+def gaussiana(x, amp, cen, wid):
+    return amp * np.exp(-((x - cen) ** 2) / (2 * wid ** 2))
+
+# --- Función para ajustar picos y obtener altura y ancho ---
+def ajustar_picos(dic_picos_restantes):
+    resultados = {}
+    for elem, dicc in dic_picos_restantes.items():
+        resultados[elem] = {}
+        for kv, df in dicc.items():
+            # Encontrar el pico máximo
+            max_index = np.argmax(df["Fotones"].values)
+            max_x = df["Energía"].values[max_index]
+            max_y = df["Fotones"].values[max_index]
+
+            # Definir un rango alrededor del pico para el ajuste
+            rango = 0.5  # Ajusta este valor según sea necesario
+            mask = (df["Energía"] >= max_x - rango) & (df["Energía"] <= max_x + rango)
+            x_data = df["Energía"].values[mask]
+            y_data = df["Fotones"].values[mask]
+
+            # Estimar parámetros iniciales
+            amp_init = max_y
+            cen_init = max_x
+            wid_init = 0.1  # Ajusta este valor según sea necesario
+
+            # Ajustar la función Gaussiana
+            try:
+                popt, _ = curve_fit(gaussiana, x_data, y_data, p0=[amp_init, cen_init, wid_init])
+                amp, cen, wid = popt
+                resultados[elem][kv] = {"altura": amp, "centro": cen, "ancho": wid}
+            except RuntimeError:
+                print(f"Error en el ajuste para {elem} en {kv}")
+
+    return resultados
+
+# --- Ejecutar el ajuste ---
+resultados_ajuste = ajustar_picos(picos_restantes)
+
+# --- Graficar altura y ancho a media altura ---
+def graficar_resultados(resultados_ajuste, filename="3.b.pdf"):
+    fig, axes = plt.subplots(2, 1, figsize=(10, 12), sharex=True)
+
+    for elem, datos in resultados_ajuste.items():
+        voltajes = list(datos.keys())
+        alturas = [datos[kv]["altura"] for kv in voltajes]
+        anchos = [datos[kv]["ancho"] for kv in voltajes]
+
+        # Graficar altura
+        axes[0].plot(voltajes, alturas, marker='o', label=elem)
+        # Graficar ancho
+        axes[1].plot(voltajes, anchos, marker='o', label=elem)
+
+    axes[0].set_ylabel("Altura del pico (u.a.)", fontsize=12)
+    axes[0].set_title("Altura de los picos en función del voltaje", fontsize=14)
+    axes[0].grid(True)
+
+    axes[1].set_ylabel("Ancho a media altura (keV)", fontsize=12)
+    axes[1].set_xlabel("Voltaje del tubo (kV)", fontsize=12)
+    axes[1].set_title("Ancho a media altura de los picos en función del voltaje", fontsize=14)
+    axes[1].grid(True)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    axes[0].legend(handles, labels, loc='upper right')
+
+    plt.savefig(filename, bbox_inches="tight", pad_inches=0.1)
+    plt.show()
+    plt.close()
+
+# --- Ejecutar la gráfica de resultados ---
+graficar_resultados(resultados_ajuste)
 
 # --- Función Gaussiana ---
 def gauss(x, A, x0, sigma):
@@ -166,5 +237,5 @@ axes[1].grid(True)
 axes[1].legend()
 
 plt.tight_layout()
-plt.savefig("3.b.pdf", bbox_inches="tight")
+plt.savefig("3.bb.pdf", bbox_inches="tight")
 plt.show()
