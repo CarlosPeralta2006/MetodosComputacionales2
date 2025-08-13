@@ -163,7 +163,7 @@ def metricas(dic_spline):
             
             spl = UnivariateSpline(x,y,s=0)
             
-            x_new = np.linspace(x.min(), x.max(), 5000)
+            x_new = np.linspace(x.min(), x.max(), 10000)
             y_new = spl(x_new)  # evaluar el spline en la nueva grilla
             
             # máximo 

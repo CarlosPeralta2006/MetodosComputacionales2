@@ -87,7 +87,7 @@ def graficar_picos_zoom(picos_restantes, xlims, filename="3.a.pdf"):
 xlims_zoom = {
     "Molibdeno (Mo)": (16.5, 20.5),
     "Rodio (Rh)": (19.5, 23.4),
-    "Tungsteno (W)": (17, 21)
+    "Tungsteno (W)": (0, 15)
 }
 
 # --- Ejecutar la gráfica ---
