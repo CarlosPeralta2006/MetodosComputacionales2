@@ -153,6 +153,9 @@ axes[1].set_ylabel("Ancho a media altura (keV)")
 axes[1].set_title("FWHM vs Voltaje")
 axes[1].grid(True)
 axes[1].legend()
+for ax in axes:
+    ax.set_xticks(df_res["Voltaje"][::3])  # cada 2 voltajes
+    ax.tick_params(axis="x", rotation=45, labelsize=9)
 
 plt.tight_layout()
 plt.savefig("3.b.pdf", bbox_inches="tight")
