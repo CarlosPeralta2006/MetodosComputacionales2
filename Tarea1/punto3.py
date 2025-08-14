@@ -155,5 +155,5 @@ axes[1].grid(True)
 axes[1].legend()
 
 plt.tight_layout()
-plt.savefig("3.bb.pdf", bbox_inches="tight")
+plt.savefig("3.b.pdf", bbox_inches="tight")
 plt.show()
