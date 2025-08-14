@@ -1,6 +1,6 @@
 from Punto1 import data
 from scipy.signal import find_peaks
-from scipy.interpolate import UnivariateSpline
+from scipy.interpolate import UnivariateSpline  # interpolación que suaviza por parámetros 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -8,61 +8,61 @@ import pandas as pd
 spectra = data()
 Mo, Rh, W = spectra   # tomar la info original
 
-# - - - PUNTO 2.a - - - 
+# - - - - - - PUNTO 2.a - - - - - - - - - - - - - - - - - - - - - - - -
 
-def rem_picos(dic_elemento, prominence=0.13, ancho=2):  # valores óptimos por tanteo
+def rem_picos(dic_elemento, prominence=0.13, ancho=2):  # valores óptimos por tanteo para usar en librería scipy.signal
+    # PROMINENCE: fracción de la altura máxima que define qué tan prominente debe ser un pico para detectarlo.
+    # ANCHO: cantidad de puntos a izquierda y derecha del pico hallado.
     
-    dict_continuo = {}  # dict que tendrá los puntos "continuos"
-    dict_picos = {}     # dict que tendrá los puntos que se eliminarán pertenecientes a picos
+    dict_continuo = {}  # dict que tendrá los puntos "continuos", sin picos
+    dict_picos = {}     # dict que tendrá los puntos que se eliminarán pertenecientes a los picos
 
-    for kv, df in dic_elemento.items():  # estructura de los diccionarios: llave: hilovoltios, Info: df con energía y fotones
+    for kv, df in dic_elemento.items():  # estructura de los diccionarios: llave: Kilovoltios, Info: df con energía y fotones
         x = df["Energía"].values
         y = df["Fotones"].values
 
-        prom = prominence * np.max(y)
-        peaks, _ = find_peaks(y, prominence=prom)
+        prom = prominence * np.max(y)  # adapta la PROMINENCIA a cada grupo de datos 
+        peaks, _ = find_peaks(y, prominence=prom)  
 
         df_fil = df.copy()  # copia
         picos_guardados = []
 
-        for p in peaks:
+        for p in peaks:  # ajusta según los datos un ancho más adecuado para identificar los picos más exactamente
             left_idx = max(p - ancho, 0)
-            right_idx = min(p + ancho, len(y) - 1)  # análisis alrededor 
+            right_idx = min(p + ancho, len(y) - 1)  # análisis alrededor, rango que rodea el pico
 
             # guardar valores eliminados
             for idx in range(left_idx, right_idx + 1):
                 picos_guardados.append({"Energía": x[idx], "Fotones": y[idx]})
 
             # eliminar del continuo
-            df_fil.loc[left_idx:right_idx, "Fotones"] = np.nan  # asigna valor NaN (usado luego)
+            df_fil.loc[left_idx:right_idx, "Fotones"] = np.nan  # asigna valor NaN (usado luego) a los puntos que tienen picos en el rango hallado
 
         # guardar en los nuevos diccionarios
         dict_continuo[kv] = df_fil
         dict_picos[kv] = pd.DataFrame(picos_guardados)
 
-    return dict_continuo, dict_picos
+    return dict_continuo, dict_picos  # retorna dict con los datos continuos (sin picos) y un dict solamente con los picos
 
 # info para graficar
 Mo_continuo, Mo_picos = rem_picos(Mo)
 Rh_continuo, Rh_picos = rem_picos(Rh)
 W_continuo, W_picos   = rem_picos(W)
 
-def graficar_2a(dic_originales, dic_continuos, dic_picos):
+def graficar_2a(dic_originales, dic_picos):
     elementos = ["Mo", "Rh", "W"]
     titulos = {"Mo": "Molibdeno (Mo)", "Rh": "Rodio (Rh)", "W": "Tungsteno (W)"}
     
-    # kV que quieres usar para cada elemento
+    # kV que se usarán de cada elemento
     kv_labels = {"Mo": "34kV", "Rh": "41kV", "W": "16kV"}
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=True)
 
     for ax, elem in zip(axes, elementos):
         dic_orig = dic_originales[elem]
-        dic_cont = dic_continuos[elem]
         dic_peak = dic_picos[elem]
 
         df_orig = dic_orig[kv_labels[elem]]
-        df_cont = dic_cont[kv_labels[elem]]
         df_peak = dic_peak[kv_labels[elem]]
 
         ax.plot(df_orig["Energía"], df_orig["Fotones"], color="black", lw=1)
@@ -84,26 +84,27 @@ dic_originales = {"Mo": Mo, "Rh": Rh, "W": W}
 dic_continuos = {"Mo": Mo_continuo, "Rh": Rh_continuo, "W": W_continuo}
 dic_picos = {"Mo": Mo_picos, "Rh": Rh_picos, "W": W_picos}
 
-graficar_2a(dic_originales, dic_continuos, dic_picos)
+graficar_2a(dic_originales, dic_picos)
 
-# - - - PUNTO 2.b - - -
+# - - - - - - PUNTO 2.b - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 def spline_diccionario(dic_continuo, s_factor=0.03):
-    dic_spline = {}
+    dic_spline = {}  # dict que guardará el continuo
     for kv, df_cont in dic_continuo.items():
-        mask = df_cont["Fotones"].notna()
-        x_valid = df_cont["Energía"][mask].values
-        y_valid = df_cont["Fotones"][mask].values
+        mask = df_cont["Fotones"].notna()  # ignora los valores que sean del tipo NaN
+        x_valid = df_cont["Energía"][mask].values  # valores filtrados
+        y_valid = df_cont["Fotones"][mask].values  # valores filtrados
 
+        # si se eliminan casi todos los datos, no se puede hacer spline, protección de la librería si pasa:
         if len(x_valid) < 4:
             dic_spline[kv] = pd.DataFrame({"Energía": df_cont["Energía"], "Fotones": [np.nan]*len(df_cont)})
             continue
 
-        # Ajuste spline suavizado
+        # ajuste del spline suavizado
         s_val = s_factor * len(x_valid)  # proporcional a número de puntos
-        spline = UnivariateSpline(x_valid, y_valid, s=s_val)
+        spline = UnivariateSpline(x_valid, y_valid, s=s_val)  # genera una curva más suave que pasa <cerca> a los puntos del continuo
 
-        # Evaluar sobre la grilla original (para comparación directa)
+        # evaluación sobre la grilla original (para comparación directa)
         y_spline = spline(df_cont["Energía"].values)
 
         dic_spline[kv] = pd.DataFrame({
@@ -116,7 +117,7 @@ Mo_inter = spline_diccionario(Mo_continuo)
 Rh_inter = spline_diccionario(Rh_continuo)
 W_inter = spline_diccionario(W_continuo)
 
-def graficar_2b(dic_continuo, dic_spline, filename="2.b.pdf", step=2):
+def graficar_2b(dic_spline, filename="2.b.pdf"):
     elementos = ["Mo", "Rh", "W"]
     titulos = {"Mo": "Molibdeno (Mo)", "Rh": "Rodio (Rh)", "W": "Tungsteno (W)"}
 
@@ -125,10 +126,8 @@ def graficar_2b(dic_continuo, dic_spline, filename="2.b.pdf", step=2):
     kv_labels = {"Mo": "34kV", "Rh": "41kV", "W": "16kV"}
     
     for ax, elem in zip(axes, elementos):
-        dic_cont = dic_continuos[elem]
         dic_spl  = dic_spline[elem]
 
-        df_cont = dic_cont[kv_labels[elem]]
         df_spl  = dic_spl[kv_labels[elem]]
         
         ax.plot(df_spl["Energía"], df_spl["Fotones"], color="blue", lw=1.5, label="Continuo sin picos")
@@ -148,9 +147,9 @@ def graficar_2b(dic_continuo, dic_spline, filename="2.b.pdf", step=2):
 dic_continuo = {"Mo": Mo_continuo, "Rh": Rh_continuo, "W": W_continuo}    
 dic_spline   = {"Mo": Mo_inter,   "Rh": Rh_inter,   "W": W_inter}
 
-graficar_2b(dic_continuo, dic_spline, step=2)
+graficar_2b(dic_spline)
 
-# - - - PUNTO 2.c - - - 
+# - - - - - - PUNTO 2.c - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
 def metricas(dic_spline):
     result = {}
@@ -198,7 +197,7 @@ def metricas(dic_spline):
 
 resultados_metricas = metricas(dic_spline)
 
-def graficar_2c(resultados_metricas):
+def graficar_2c(resultados_metricas):  # 4 subplots solicitados
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
     colores = {"Mo": "tab:blue", "Rh": "tab:orange", "W": "tab:green"}
