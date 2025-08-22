@@ -11,3 +11,8 @@ def generate_data(tmax,dt,A,freq,noise):
      ts = np.arange(0,tmax+dt,dt)
      return ts, np.random.normal(loc=A*np.sin(2*np.pi*ts*freq),scale=noise)
  
+t, y = generate_data(1, 0.1, 2, 5, 0.2)
+
+plt.plot(t, y, label="Señal con ruido")
+plt.legend()
+plt.show()
