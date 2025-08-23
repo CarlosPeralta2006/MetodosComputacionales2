@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from scipy.signal import savgol_filter 
+from scipy.signal import savgol_filter, find_peaks
 import matplotlib.pyplot as plt
 
 # - - - 2.a - - - - - - - - - 
@@ -41,24 +41,33 @@ T = 1 / f_dom
 
 with open("2.b.txt", "w") as f:
     f.write(f"Periodo: {T:.2f}\n")
-    
-print(T)
-
 
 # filtro pasa bajas desde el espacio de tiempos
 ts = np.arange(len(spots))
-spots_savgol = savgol_filter(spots, window_length=500, polyorder=5)
+spots_savgol = savgol_filter(spots, window_length=1500, polyorder=4)
 
 plt.figure(figsize=(12,6))
-plt.legend()
 plt.plot(ts, spots, color='red', label='Datos originales')
 plt.plot(ts, spots_savgol, color='b', label='Datos filtrados')   
 plt.xlabel('Tiempo (días)')
 plt.ylabel('Número de Manchas Solares')
 plt.title('Eliminación del Ruido de los Datos')
-
+plt.legend()
 plt.savefig('2.b.data.pdf', bbox_inches="tight", pad_inches=0.1)
 
+# máximos locales
+dates = pd.to_datetime(dict(year=data["year"], month=data["month"], day=data["day"]))
 
+idx_peaks, _ = find_peaks(spots_savgol, prominence=70)
+peaks = spots_savgol[idx_peaks]
+dates_peaks = dates[idx_peaks]
 
-
+plt.figure(figsize=(12,6))
+plt.scatter(dates_peaks, peaks, color='b', label='Puntos pertenecientes a los picos')
+plt.xlabel('Fecha (YYYY-MM-DD)')
+plt.ylabel('Número de Manchas Solares')
+plt.title('Picos Periódicos en la Señal')
+plt.legend()
+plt.xticks(dates_peaks, [d.strftime('%Y-%m-%d') for d in dates_peaks], rotation=90)
+plt.tight_layout()
+plt.savefig('2.b.maxima.pdf', bbox_inches='tight', pad_inches=0.1)
