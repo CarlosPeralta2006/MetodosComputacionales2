@@ -27,16 +27,16 @@ ts = data["decimal_date"]
 
 # - - - 2.b - - - - - - - - - 
 
-param = 10
+param = 6
 F = np.fft.fft(spots, n = param * len(spots))
-F = np.fft.fftshift(F)
+#F = np.fft.fftshift(F)
 
-freq = np.fft.fftfreq(n = param * len(spots) ,d = 1)
-freq = np.fft.fftshift(freq)
+freq = np.fft.fftfreq(n = param * len(spots), d = 1)
+#freq = np.fft.fftshift(freq)
 
 
 F_filtrada = F.copy()
-F_filtrada[abs(freq) < 10] = 0.
+F_filtrada[abs(freq) > 0.05] = 0.
 
 plt.plot(freq,abs(F))
 plt.plot(freq,abs(F_filtrada))
