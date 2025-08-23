@@ -1,6 +1,6 @@
 import pandas as pd
-from pandas import DataFrame as DF
 import numpy as np
+from scipy.signal import savgol_filter 
 import matplotlib.pyplot as plt
 
 # - - - 2.a - - - - - - - - - 
@@ -20,25 +20,45 @@ data["spots"] = data["spots"].interpolate(method="pchip")
 data["spot_std"] = data["spot_std"].interpolate(method="pchip")
 
 spots = data["spots"]
-ts = data["decimal_date"]
-
 
 # si solo se quitan, la periodicidad del muestreo se perdería
 
 # - - - 2.b - - - - - - - - - 
 
-param = 6
+# implementación de la Transformada Rápida de Fourier
+param = 10
 F = np.fft.fft(spots, n = param * len(spots))
-#F = np.fft.fftshift(F)
-
 freq = np.fft.fftfreq(n = param * len(spots), d = 1)
-#freq = np.fft.fftshift(freq)
 
 
-F_filtrada = F.copy()
-F_filtrada[abs(freq) > 0.05] = 0.
+mask = freq > 1/100000  # evitar que tome el pico ubicado en 0 (promedio) y val. negativos
+freq_pos = freq[mask]
+F_pos = F[mask]
 
-plt.plot(freq,abs(F))
-plt.plot(freq,abs(F_filtrada))
+idx_max = np.argmax(np.abs(F_pos))  # indica en qué índice se encuentra el valor máximo
+f_dom = freq_pos[idx_max]
+T = 1 / f_dom
 
-plt.show()
+with open("2.b.txt", "w") as f:
+    f.write(f"Periodo: {T:.2f}\n")
+    
+print(T)
+
+
+# filtro pasa bajas desde el espacio de tiempos
+ts = np.arange(len(spots))
+spots_savgol = savgol_filter(spots, window_length=500, polyorder=5)
+
+plt.figure(figsize=(12,6))
+plt.legend()
+plt.plot(ts, spots, color='red', label='Datos originales')
+plt.plot(ts, spots_savgol, color='b', label='Datos filtrados')   
+plt.xlabel('Tiempo (días)')
+plt.ylabel('Número de Manchas Solares')
+plt.title('Eliminación del Ruido de los Datos')
+
+plt.savefig('2.b.data.pdf', bbox_inches="tight", pad_inches=0.1)
+
+
+
+
