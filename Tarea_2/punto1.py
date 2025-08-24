@@ -44,19 +44,19 @@ noise = 0.2
 
 # Generar datos
 t, y = generate_data(tmax, dt, A, freq, noise)
-# Calcular frecuencia de Nyquist
+# Calcular la very frecuencia de Nyquist
 f_nyq = 1/(2*dt)
 # Construir frecuencias hasta 2.7 × Nyquist
 freqs = np.linspace(0, 2.7*f_nyq, 2000)
-# Calcular transformada de Fourier
+# Calcular transformada de Fourierr
 F = Fourier_transform(t, y, freqs)
-# Calcular la amplitud del espectro (módulo de la transformada)
+# Calcular la amplitud del espectro 
 amplitud_espectro = np.abs(F)
-# Graficar la amplitud del espectro en función de la frecuencia
+
 plt.figure(figsize=(12, 6))
-# Gráfico principal: Amplitud del espectro
+
 plt.plot(freqs, amplitud_espectro, 'b-', linewidth=1.5, label='Amplitud del espectro')
-# Líneas de referencia importantes
+
 plt.axvline(x=freq, color='red', linestyle='--', alpha=0.8, 
             label=f'Frecuencia de la señal ({freq} Hz)')
 plt.axvline(x=f_nyq, color='green', linestyle='--', alpha=0.8, 
@@ -79,11 +79,8 @@ plt.show()
 
 
 def calculate_SN_freq(amplitud_espectro, freq, freqs, window_size=5):
-    """
-    Calcula SN_freq: altura del pico principal dividida por la desviación estándar
-    del fondo (parte sin picos).
-    """
-    # Encontrar el índice del pico principal (cerca de la frecuencia de la señal)
+   
+    # Encontrar el índice del pico principal 
     idx_peak = np.argmin(np.abs(freqs - freq))
     
     # Altura del pico principal
@@ -110,8 +107,8 @@ def calculate_SN_freq(amplitud_espectro, freq, freqs, window_size=5):
 
 # Generar valores de SN_time (logarítmicamente distribuídos de 0.01 a 1.0)
 num_datasets = 100 
-SN_time_values = np.logspace(-2, 0, num_datasets)  # 0.01 a 1.0  #np.logspace(a, b, N) → genera N valores igualmente espaciados en escala logarítmica, desde 10**𝑎 ahasta 10**b.
-#Entonces SN_time_values es un array con 100 valores entre 0.01 y 1.0, pero distribuidos logarítmicamente
+SN_time_values = np.logspace(-2, 0, num_datasets)  # 0.01 a 1.0  #np.logspace(a, b, N) -> genera N valores igualmente espaciados en escala logarítmica, desde 10**𝑎 ahasta 10**b.
+#Entonces SN_time_values es un array con 100 valorees entre 0.01 y 1.0, pero distribuidos logarítmicamente
 # Arrays para almacenar resultados
 
 SN_freq_values = []
@@ -144,6 +141,8 @@ plt.ylabel('SN_freq', fontsize=12)
 plt.title('SN_freq vs SN_time (log-log)', fontsize=14)
 plt.grid(True, alpha=0.3, which='both')
 
+
+
 # Ajustar modelo lineal en log-log (potencia)
 log_SN_time = np.log10(SN_time_values)
 log_SN_freq = np.log10(SN_freq_values)   #log(SNfreq​)=m⋅log(SNtime​)+b
@@ -169,24 +168,34 @@ plt.savefig("1.b.pdf", bbox_inches='tight', dpi=300)
 plt.show()
 
 
-
-# Función para calcular el ancho del pico
-def calculate_peak_width(amplitud_espectro, freqs, threshold=0.5):
+def calculate_peak_width_interp(amplitud_espectro, freqs, threshold=0.5):
     peak_index = np.argmax(amplitud_espectro)
-    peak_freq = freqs[peak_index]
     peak_height = amplitud_espectro[peak_index]
-    
-    # Encontrar el ancho del pico en el umbral especificado
     threshold_height = peak_height * threshold
-    left_index = np.where(amplitud_espectro[:peak_index] < threshold_height)[0]
-    right_index = np.where(amplitud_espectro[peak_index:] < threshold_height)[0]
+
+   
+    left_indices = np.where(amplitud_espectro[:peak_index] < threshold_height)[0]
+   
+    right_indices = np.where(amplitud_espectro[peak_index:] < threshold_height)[0]
+
+    if len(left_indices) == 0 or len(right_indices) == 0:
+        return 0  # No se puede calcular ancho
+
     
-    if len(left_index) > 0 and len(right_index) > 0:
-        width = freqs[right_index[0] + peak_index] - freqs[left_index[-1]]
-    else:
-        width = 0  # Si no se encuentra el ancho, se establece en 0
-    
+    i_left = left_indices[-1]     
+    f_left = freqs[i_left] + (freqs[i_left+1]-freqs[i_left]) * \
+             (threshold_height - amplitud_espectro[i_left]) / \
+             (amplitud_espectro[i_left+1] - amplitud_espectro[i_left])
+
+   
+    i_right = right_indices[0] + peak_index  
+    f_right = freqs[i_right-1] + (freqs[i_right]-freqs[i_right-1]) * \
+              (threshold_height - amplitud_espectro[i_right-1]) / \
+              (amplitud_espectro[i_right] - amplitud_espectro[i_right-1])
+
+    width = f_right - f_left
     return width
+
 
 # Generar diferentes tmax y calcular el ancho del pico
 tmax_values = np.linspace(1, 10, 10)  # Cambiar tmax de 1 a 10
@@ -196,7 +205,7 @@ for tmax in tmax_values:
     t, y = generate_data(tmax, dt, A, freq, noise)
     F = Fourier_transform(t, y, freqs)
     amplitud_espectro = np.abs(F)
-    width = calculate_peak_width(amplitud_espectro, freqs)
+    width = calculate_peak_width_interp(amplitud_espectro, freqs)
     peak_widths.append(width)
 
 # Graficar el ancho del pico en función de tmax
