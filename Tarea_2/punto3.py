@@ -41,7 +41,7 @@ X,Y = np.meshgrid(np.arange(pato.shape[1]),np.arange(pato.shape[0]))
 F = np.fft.fft2(pato)
 F = np.fft.fftshift(F)
 
-# cuadros a eliminar del espacio de frecuencias 
+# cuadros a eliminar del espacio de frecuencias - tanteo
 Z = (abs(X-256) < 6) & (abs(Y-128) < 121) 
 W = (abs(X-256) < 6) & (abs(Y-384) < 121)
 G = (abs(X-128) < 121) & (abs(Y-256) < 6)
