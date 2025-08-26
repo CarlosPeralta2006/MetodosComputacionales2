@@ -43,13 +43,18 @@ F = np.fft.fftshift(F)
 
 # cuadros a eliminar del espacio de frecuencias - tanteo
 Z = (abs(X-256) < 6) & (abs(Y-128) < 121) 
-W = (abs(X-256) < 6) & (abs(Y-384) < 121)
+W = (abs(X-256) < 6) & (abs(Y-384) < 121) 
 G = (abs(X-128) < 121) & (abs(Y-256) < 6)
 E = (abs(X-384) < 121) & (abs(Y-256) < 6)
 Z_line = np.abs(Y - (-0.34*X + 340)) < 2.4
+Z_line2 = np.abs(Y - (X)) < 7.2
 Z_ring = (np.hypot(X-256,Y-256) <= 13.5) & (np.hypot(X-256,Y-256) >= 4.9)
 
-F_filt = F * (1-Z) * (1-W) * (1-G) * (1-E) * (1-Z_line) * (1-Z_ring)
+let = np.hypot(X-256,Y-256) <= 4.89
+
+F_del = (1-Z) * (1-W) * (1-G) * (1-E) * (1-Z_line) * (1-Z_ring) * (1-Z_line2)
+F_fil = (F_del) | (let)
+F_filt = F * F_fil
 
 pato_filt = np.fft.ifft2(np.fft.fftshift(F_filt))
 
@@ -57,3 +62,7 @@ plt.figure(figsize=(12,12))
 plt.imshow(pato_filt.real)  
 plt.axis("off")                   
 plt.savefig("3.b.a.pdf", bbox_inches="tight", pad_inches=0.)
+
+
+
+gato = np.array(Image.open('Data2/tomography_data/g_a_t_o.jpg'))
