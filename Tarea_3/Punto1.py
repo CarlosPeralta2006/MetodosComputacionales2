@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
+
 #Punto 1a
 # Parámetros
 alpha, beta, gamma, delta = 2, 1.5, 0.3, 0.4
@@ -56,6 +57,7 @@ axs[1].set_title("Cantidad Conservada")
 
 plt.tight_layout()
 plt.savefig("1.a.pdf")
+
 
 #Punto 1b
 # Parámetros
@@ -122,3 +124,100 @@ axs[2].set_ylabel("Energía K+U")
 
 plt.tight_layout()
 plt.savefig("1.b.pdf")
+
+#Punto 1c
+#Parametros
+G = 1.0
+m1 = m2 = 1.7
+
+# Posiciones y velocidades iniciales
+r1_0 = np.array([0.0, 0.0])
+r2_0 = np.array([1.0, 1.0])
+v1_0 = np.array([0.0, 0.5])
+v2_0 = np.array([0.0, -0.5])
+
+# Empaquetamos el estado: z = [x1, y1, x2, y2, vx1, vy1, vx2, vy2]
+z0 = np.hstack([r1_0, r2_0, v1_0, v2_0])
+
+def two_body(t, z):
+    x1, y1, x2, y2, vx1, vy1, vx2, vy2 = z
+    r1 = np.array([x1, y1])
+    r2 = np.array([x2, y2])
+    v1 = np.array([vx1, vy1])
+    v2 = np.array([vx2, vy2])
+
+    # Vector separación y distancia
+    r12 = r2 - r1
+    dist = np.hypot(r12[0], r12[1])
+    # Evitar división por cero en caso patológico
+    inv_r3 = 1.0 / (dist**3 + 1e-14)
+
+    # Aceleraciones (fuerza gravitacional mutua)
+    a1 = G * m2 * r12 * inv_r3
+    a2 = -G * m1 * r12 * inv_r3
+
+    return [v1[0], v1[1], v2[0], v2[1], a1[0], a1[1], a2[0], a2[1]]
+
+def total_energy(z):
+    x1, y1, x2, y2, vx1, vy1, vx2, vy2 = z
+    r1 = np.array([x1, y1]); r2 = np.array([x2, y2])
+    v1 = np.array([vx1, vy1]); v2 = np.array([vx2, vy2])
+
+    K = 0.5*m1*np.dot(v1, v1) + 0.5*m2*np.dot(v2, v2)
+    r12 = r2 - r1
+    dist = np.hypot(r12[0], r12[1])
+    U = - G * m1 * m2 / dist       # potencial gravitacional (negativo)
+    return K + U
+
+def total_angular_momentum_z(z):
+    x1, y1, x2, y2, vx1, vy1, vx2, vy2 = z
+    r1 = np.array([x1, y1]); r2 = np.array([x2, y2])
+    v1 = np.array([vx1, vy1]); v2 = np.array([vx2, vy2])
+    # Lz = sum m (x v_y - y v_x)
+    Lz1 = m1*(r1[0]*v1[1] - r1[1]*v1[0])
+    Lz2 = m2*(r2[0]*v2[1] - r2[1]*v2[0])
+    return Lz1 + Lz2
+
+#Solucion ODE
+t_span = (0.0, 10.0)
+t_eval = np.linspace(*t_span, 4000)
+
+sol = solve_ivp(
+    two_body, t_span, z0, t_eval=t_eval,
+    method="DOP853", rtol=1e-10, atol=1e-12, max_step=0.01
+)
+
+t  = sol.t
+x1, y1, x2, y2, vx1, vy1, vx2, vy2 = sol.y
+
+# Cantidades conservadas
+E  = np.array([total_energy(sol.y[:,i]) for i in range(sol.y.shape[1])])
+Lz = np.array([total_angular_momentum_z(sol.y[:,i]) for i in range(sol.y.shape[1])])
+
+E0, Lz0 = E[0], Lz[0]
+dE  = E - E0
+dLz = Lz - Lz0
+
+#Graficas
+fig, axs = plt.subplots(3, 1, figsize=(6.2, 8.5), sharex=True)
+
+# (1) Solución: posiciones
+axs[0].plot(t, x1, label="x1(t)")
+axs[0].plot(t, y1, label="y1(t)")
+axs[0].plot(t, x2, label="x2(t)", linestyle="--")
+axs[0].plot(t, y2, label="y2(t)", linestyle="--")
+axs[0].set_ylabel("Posición")
+axs[0].set_title("Sistema binario: solución y cantidades conservadas")
+axs[0].legend(ncol=2)
+
+# (2) Energía total
+axs[1].plot(t, E)
+axs[1].set_ylabel("E(t)")
+
+# (3) Momento angular total (componente z)
+axs[2].plot(t, Lz)
+axs[2].set_xlabel("Tiempo")
+axs[2].set_ylabel("Lz(t)")
+
+plt.tight_layout()
+plt.savefig("1.c.pdf")
