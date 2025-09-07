@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
+#Punto 1a
 # Parámetros
 alpha, beta, gamma, delta = 2, 1.5, 0.3, 0.4
 
@@ -25,7 +26,13 @@ t_span = (0, 50)
 t_eval = np.linspace(*t_span, 2000)
 
 # Resolver ODE
-sol = solve_ivp(lotka_volterra, t_span, z0, t_eval=t_eval, method="RK45")
+sol = solve_ivp(
+    lotka_volterra, (0, 50), [3, 2],
+    t_eval=np.linspace(0, 50, 4000),   # más denso
+    method="DOP853",                   # más preciso que RK45
+    rtol=1e-10, atol=1e-12,            # tolerancias estrictas
+    max_step=0.05                      # limita paso máximo
+)
 x, y = sol.y
 t = sol.t
 V = conserved(x, y)
@@ -49,3 +56,5 @@ axs[1].set_title("Cantidad Conservada")
 
 plt.tight_layout()
 plt.savefig("1.a.pdf")
+
+#Punto 1b
