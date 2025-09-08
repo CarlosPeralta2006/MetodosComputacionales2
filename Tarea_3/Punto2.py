@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
+
+#Punto 2a
 #Parametros fisicos 
 m = 10.01           # kg
 g = 9.773           # m/s^2
@@ -99,5 +101,33 @@ plt.plot(v0_list, xmax_list, marker='o', linewidth=1.5)
 plt.xlabel(r"$v_0$  [m/s]")
 plt.ylabel(r"$x_{\max}$  [m]")
 plt.title("2.a  Alcance máximo vs velocidad inicial (con fricción)")
+plt.grid(True, which='both', axis='both')
 plt.tight_layout()
 plt.savefig("2.a.pdf")
+#El analisis numerico muestra que el alcance maximo aumenta con la velocidad inicial, pero a un ritmo decreciente. Esto se debe a que la resistencia del aire incrementa con la velocidad, lo que limita el aumento del alcance a velocidades muy altas.
+#Tambien, el angulo optimo theta es practicamente constante (60.65 grados) para un rango amplio de velocidades iniciales.Esto sugiere que en presencia de rozamiento dependiente de la altura, el angulo que maximiza el alcance se estabiliza alrededor de un valor especifico mayor a 45 grados, y que la dependencia con v0 es debil en ese regimen.
+
+
+#Punto 2a1 bono
+# Alcance óptimo para un v0 dado
+def alcance_optimo(v0):
+    theta_star, x_star = maximize_theta(v0)   # usa tu función de búsqueda previa
+    return theta_star, x_star
+
+# BONO: si v0 se da como (v0-, v0+)
+def alcance_con_error(v0_intervalo):
+    v0_minus, v0_plus = float(v0_intervalo[0]), float(v0_intervalo[1])
+    v0_nom = 0.5 * (v0_minus + v0_plus)
+
+    # optimizamos en v0- y v0+
+    _, x_minus = alcance_optimo(v0_minus)
+    _, x_plus  = alcance_optimo(v0_plus)
+
+    # estimadores
+    x_nom = 0.5 * (x_minus + x_plus)
+    sx    = 0.5 * abs(x_plus - x_minus)
+
+    # ángulo óptimo en el valor nominal
+    th_nom, _ = alcance_optimo(v0_nom)
+
+    return v0_nom, th_nom, x_nom, sx
