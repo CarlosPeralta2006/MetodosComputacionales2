@@ -11,7 +11,7 @@ def filtro_pasa_altas(signal):
     # Transformada de Fourier
     fft = np.fft.fft(signal)
     freqs = np.fft.fftfreq(N).reshape(-1, 1)
-    # Filtro tipo rampa: |freq|
+    # Filtro tipo rampa:
     ramp = np.abs(freqs)
     # Aplicar filtro
     fft_filtrado = fft * ramp.flatten()
@@ -30,7 +30,7 @@ for i, ang in enumerate(angulos):
     # Expandir a 2D (repetir en filas)
     proy_2D = np.tile(filtrada[:, None], (1, rows)).T
     # Rotar
-    img_rotada = ndi.rotate(proy_2D, ang, reshape=False, mode="reflect")
+    img_rotada = ndi.rotate(proy_2D, -ang, reshape=False, mode="reflect")
     # Acumular
     reconstruccion += img_rotada
 
@@ -39,3 +39,4 @@ plt.imshow(reconstruccion, cmap="inferno")
 plt.title("Reconstrucción Tomográfica Filtrada")
 plt.axis("off")
 plt.savefig("4.png", dpi=300)
+plt.show()
