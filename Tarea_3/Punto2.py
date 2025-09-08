@@ -131,3 +131,99 @@ def alcance_con_error(v0_intervalo):
     th_nom, _ = alcance_optimo(v0_nom)
 
     return v0_nom, th_nom, x_nom, sx
+
+
+#Punto 2b
+#Evento tocar el suelo, la bala no puede rebotar
+def hit_ground(t, z):
+    return z[1]
+hit_ground.terminal  = True
+hit_ground.direction = -1.0   # solo cuando va bajando
+
+#Evento colision con el target, definiendo el target como un circulo de radio tol alrededor del punto
+def make_event_hit_point(x_target, y_target, tol=0.10):
+    xt, yt, r = float(x_target), float(y_target), float(tol)
+    def hit_point(t, z):
+        dx = z[0] - xt
+        dy = z[1] - yt
+        # cruza cero cuando la distancia == tol
+        return np.hypot(dx, dy) - r
+    hit_point.terminal  = True   # detener al colisionar
+    hit_point.direction = 0.0    # detectar cruzamientos en cualquier sentido
+    return hit_point
+
+#Disparo con evento de punto;invalida si toca suelo antes de golpear el target
+def simulate_shot_with_point_event(v0, theta_deg, x_target, y_target, y0=0.0, max_t=60.0, tol=0.10, rtol=1e-8, atol=1e-10, max_step=0.02):
+    #Retorna dict con: hit (bool), t_hit (float or None), sol (solve_ivp object), reason (str).'hit' es True sólo si se detectó el evento de punto ANTES de tocar el suelo.
+    theta = np.deg2rad(theta_deg)
+    vx0 = v0 * np.cos(theta)
+    vy0 = v0 * np.sin(theta)
+    z0  = [0.0, y0, vx0, vy0]
+    ev_point = make_event_hit_point(x_target, y_target, tol=tol)
+    sol = solve_ivp(
+        projectile_ode, (0.0, max_t), z0,
+        events=(ev_point, hit_ground),
+        rtol=rtol, atol=atol, max_step=max_step, dense_output=True
+    )
+     # ¿tocó punto?
+    has_point  = sol.t_events[0].size > 0
+    # ¿tocó suelo?
+    has_ground = sol.t_events[1].size > 0
+    t_hit_point  = sol.t_events[0][0] if has_point  else np.inf
+    t_hit_ground = sol.t_events[1][0] if has_ground else np.inf
+    if has_point and (t_hit_point < t_hit_ground):
+        return dict(hit=True, t_hit=float(t_hit_point), sol=sol, reason="hit_point")
+    else:
+        reason = "hit_ground_first" if has_ground and (t_hit_ground < t_hit_point) else "no_event"
+        return dict(hit=False, t_hit=None, sol=sol, reason=reason)
+
+#Busqueda de angulo que genere colision con el target usando el evento del punto
+def angle_to_hit_target_event(v0, x_target, y_target,th_lo=10.0, th_hi=80.0,tol=0.10, grid=361):
+    thetas = np.linspace(th_lo, th_hi, int(grid))
+    best = dict(theta=None, hit=False, miss_dist=np.inf, t_hit=None, reason="no_event")
+
+    # Barrido: nos quedamos con el primer 'hit' o el miss con menor distancia
+    for th in thetas:
+        out = simulate_shot_with_point_event(v0, th, x_target, y_target, tol=tol)
+        if out["hit"]:
+            return th, dict(**best, theta=th, hit=True, miss_dist=0.0, t_hit=out["t_hit"], reason="hit_point")
+        else:
+            # Si no hubo hit, estimamos distancia mínima al target en toda la trayectoria calculada
+            sol = out["sol"]
+            # construir tiempo denso para estimar distancia
+            t_end = sol.t[-1]
+            tt = np.linspace(0.0, t_end, 400)
+            if sol.sol is not None:
+                zz = sol.sol(tt)
+                xx, yy = zz[0], zz[1]
+            else:
+                # fallback: interp lineal
+                xx = np.interp(tt, sol.t, sol.y[0])
+                yy = np.interp(tt, sol.t, sol.y[1])
+            dmin = float(np.min(np.hypot(xx - x_target, yy - y_target)))
+            if dmin < best["miss_dist"]:
+                best.update(theta=float(th), miss_dist=dmin, t_hit=None, reason=out["reason"])
+    return None,best
+
+theta, info = angle_to_hit_target_event(v0=60.0, x_target=25.0, y_target=2.0, tol=0.15)
+print("theta:", theta, "info:", info)
+
+if theta is not None:
+    out = simulate_shot_with_point_event(60.0, theta, 25.0, 2.0, tol=0.15)
+    sol = out["sol"]
+    t_end = out["t_hit"] if out["t_hit"] is not None else sol.t[-1]
+    tt = np.linspace(0.0, t_end, 400)
+    zz = sol.sol(tt) if sol.sol is not None else np.vstack([np.interp(tt, sol.t, sol.y[i]) for i in range(sol.y.shape[0])])
+    xx, yy = zz[0], zz[1]
+
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(6.4,4.2))
+    plt.plot(xx, yy, label=fr"θ={theta:.2f}°")
+    plt.scatter([25.0], [2.0], marker='x', s=70, zorder=5, label="Target")
+    circ = plt.Circle((25.0, 2.0), 0.15, fill=False, linestyle="--", alpha=0.6)
+    plt.gca().add_patch(circ)
+    plt.xlabel("x [m]"); plt.ylabel("y [m]")
+    plt.title("Disparo con evento de colisión puntual")
+    plt.grid(True, linestyle="--", alpha=0.6); plt.legend()
+    plt.tight_layout()
+    plt.show()
