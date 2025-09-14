@@ -16,6 +16,9 @@ def beta_of_y(y):
     # Cuando y es mayor que B, el termino se vuelve negativo y se eleva a C, lo que da error en python y es incorrecto físicamente
     return A * np.power(np.clip(1.0 - y / B, 0.0, 1.0), C)
 
+#Ecuaciones de movimiento
+#La friccion actua en el eje x y en el eje y, pero en el eje y tambien actua la gravedad
+
 def projectile_ode(t, z):
     x, y, vx, vy = z
     vnorm = np.hypot(vx, vy)   # norma de v
@@ -33,15 +36,6 @@ def projectile_ode(t, z):
 
     return [vx, vy, ax, ay]
 
-#Ecuaciones de movimiento
-#La friccion actua en el eje x y en el eje y, pero en el eje y tambien actua la gravedad
-def projectile_ode(t, z):
-    x, y, vx, vy = z
-    v2 = vx*vx + vy*vy   
-    b  = beta_of_y(y)
-    ax = - (b/m) * v2 * vx
-    ay = - g     - (b/m) * v2 * vy
-    return [vx, vy, ax, ay]
 
 # Evento: impacto con el suelo (y=0) viniendo hacia abajo
 def hit_ground(t, z):
