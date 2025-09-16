@@ -455,3 +455,5 @@ plt.plot(v0_c[mask1], th_both[mask1,1], marker='s', linewidth=1.2, markersize=3,
 plt.xlabel(r"$v_0$  [m/s]"); plt.ylabel(r"$\theta_0$  [deg]")
 plt.title(r"2.c  Condiciones que atinan a $(12\,\mathrm{m},0)$ — dos ramas")
 plt.grid(True, alpha=0.35); plt.legend(); plt.tight_layout(); plt.savefig("2.c.pdf")
+ #Tiene dimension cuadratica, ya que debido a la forma del lanzamiento parabolico se pueden tomar 2 rutas para llegar al mismo punto, una con un angulo mas cerrado y otra con un angulo mas abierto, hasta que ambas por la friccion se vuelven la misma y generan valores minimos de theta y v0.
+ #Se podria realizar una parametrizacion a partir del angulo de disparo, donde para cada theta se usa x como reloj para encontrar el tiempo en que se alcanza la coordenada de impacto xt
