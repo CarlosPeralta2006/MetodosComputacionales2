@@ -287,30 +287,171 @@ def angle_to_hit_target_event(
 
 #Punto 2c
 
-def compute_theta_curve_for_target(xt=12.0, yt=0.0,vmin=10.0, vmax=140.0, n_v=300,tol=0.05, grid=2001):
+from scipy.optimize import brentq
+
+def _x_of_theta_grid(v0, thetas):
+    """Evalúa x(θ) con range_for, devolviendo un array (posibles NaN)."""
+    xs = np.empty_like(thetas, dtype=float)
+    for i, th in enumerate(thetas):
+        xs[i] = range_for(v0, float(th))
+    return xs
+
+def _find_brackets_for_xt(thetas, xs, xt):
     """
-    Devuelve (v0_list, theta_hit_list) donde theta_hit_list tiene NaN
-    cuando no se encontró ángulo que impacte.
+    Devuelve lista de (thL, thR) donde (xs-xt) cambia de signo.
+    Ignora puntos no finitos. Puede devolver 0, 1 o 2 brackets.
+    """
+    f = xs - xt
+    brackets = []
+    # limpiamos NaN/inf reemplazando por None para saltarlos
+    valid = np.isfinite(f)
+    for i in range(len(thetas) - 1):
+        if not (valid[i] and valid[i+1]):
+            continue
+        a, b = f[i], f[i+1]
+        if a == 0.0:  # justo en el blanco
+            # bracket mínimo alrededor
+            if i > 0 and np.isfinite(f[i-1]) and f[i-1]*a < 0:
+                brackets.append((thetas[i-1], thetas[i]))
+            elif np.isfinite(b) and a*b < 0:
+                brackets.append((thetas[i], thetas[i+1]))
+            else:
+                # si es exactamente cero pero sin cambio, crea un micro-bracket local
+                eps = 1e-3
+                brackets.append((thetas[i]-eps, thetas[i]+eps))
+        elif a*b < 0:
+            brackets.append((thetas[i], thetas[i+1]))
+    return brackets
+
+def _refine_root_brent(v0, xt, thL, thR, xtol=1e-6, rtol=1e-8, maxiter=80):
+    """Refina raíz de f(θ)=x(θ)-xt en [thL,thR] con Brent."""
+    def f(th):
+        x = range_for(v0, float(th))
+        if not np.isfinite(x):
+            # pequeño truco: devuelve un valor grande del signo de los extremos
+            return np.nan
+        return x - xt
+    # Intenta asegurar que f(thL) y f(thR) son finitos; si no, abre un poco
+    def finite_f(th, step=1e-3, tries=5):
+        val = f(th)
+        if np.isfinite(val):
+            return th, val
+        # intentar pequeñas corridas
+        for k in range(1, tries+1):
+            for s in (-1.0, 1.0):
+                th2 = th + s*k*step
+                if th2 <= 10.0 or th2 >= 80.0:
+                    continue
+                val2 = f(th2)
+                if np.isfinite(val2):
+                    return th2, val2
+        return th, val
+    thL2, fL = finite_f(thL)
+    thR2, fR = finite_f(thR)
+    if not (np.isfinite(fL) and np.isfinite(fR)):
+        raise ValueError("No se pudo obtener valores finitos para el bracket")
+    if fL == 0.0:
+        return float(thL2)
+    if fR == 0.0:
+        return float(thR2)
+    if fL * fR > 0:
+        # como fallback, intenta un bracket muy pequeño alrededor del punto medio
+        mid = 0.5*(thL2 + thR2)
+        dm = 1e-2
+        return brentq(lambda th: f(th), mid-dm, mid+dm, xtol=xtol, rtol=rtol, maxiter=maxiter)
+    # Brent normal
+    return brentq(lambda th: f(th), thL2, thR2, xtol=xtol, rtol=rtol, maxiter=maxiter)
+
+def theta_roots_for_xt(v0, xt=12.0, th_lo=10.0, th_hi=80.0,
+                       grid_samples=121, refine=True):
+    """
+    Devuelve lista de soluciones en grados (puede tener 0, 1 o 2 elementos).
+    - Primero muestrea x(θ) en un grid (121 por defecto).
+    - Si max(x)<xt => sin solución.
+    - Encuentra brackets y (opcional) refina con Brent.
+    """
+    thetas = np.linspace(th_lo, th_hi, int(grid_samples))
+    xs = _x_of_theta_grid(v0, thetas)
+    # chequeo rápido
+    if not np.any(np.isfinite(xs)) or (np.nanmax(xs) < xt):
+        return []  # no hay solución
+    brackets = _find_brackets_for_xt(thetas, xs, xt)
+    if not brackets:
+        # como extra, densificar y volver a intentar
+        thetas2 = np.linspace(th_lo, th_hi, 401)
+        xs2 = _x_of_theta_grid(v0, thetas2)
+        if not np.any(np.isfinite(xs2)) or (np.nanmax(xs2) < xt):
+            return []
+        brackets = _find_brackets_for_xt(thetas2, xs2, xt)
+        if not brackets:
+            return []
+
+    roots = []
+    for (a, b) in brackets:
+        if not refine:
+            roots.append(0.5*(a+b))
+            continue
+        try:
+            root = _refine_root_brent(v0, xt, a, b, xtol=1e-6, rtol=1e-8, maxiter=80)
+            roots.append(float(root))
+        except Exception:
+            # si falla Brent, deja el centro del bracket como aproximación
+            roots.append(float(0.5*(a+b)))
+    # ordena por valor (rama baja primero)
+    roots = sorted(roots)
+    # elimina duplicados casi iguales
+    dedup = []
+    for r in roots:
+        if not dedup or abs(r - dedup[-1]) > 1e-3:
+            dedup.append(r)
+    return dedup
+
+
+def curve_theta_vs_v0_for_target_xt(xt=12.0, vmin=10.0, vmax=140.0, n_v=150,
+                                    th_lo=10.0, th_hi=80.0, grid_samples=121,
+                                    take_branch="low"):
+    """
+    Devuelve (v0_list, theta_list). Si hay 2 soluciones:
+      - take_branch="low": toma la de menor ángulo
+      - take_branch="high": la de mayor ángulo
+      - take_branch="both": devuelve una matriz (N, 2) con NaN donde falte
     """
     v0_list = np.linspace(vmin, vmax, int(n_v))
-    theta_hits = np.full(v0_list.shape, np.nan, dtype=float)
+    if take_branch == "both":
+        theta_mat = np.full((len(v0_list), 2), np.nan, dtype=float)
+    else:
+        theta_list = np.full(len(v0_list), np.nan, dtype=float)
+
+    last_theta = None  # para escoger rama consistente si deseas
     for i, v0 in enumerate(v0_list):
-        th, info = angle_to_hit_target_event(v0, xt, yt, tol=tol, grid=grid)
-        if info["hit"]:
-            theta_hits[i] = float(th)
-    return v0_list, theta_hits
+        roots = theta_roots_for_xt(v0, xt=xt, th_lo=th_lo, th_hi=th_hi,
+                                   grid_samples=grid_samples, refine=True)
+        if take_branch == "both":
+            if len(roots) >= 1:
+                theta_mat[i, 0] = roots[0]
+            if len(roots) >= 2:
+                theta_mat[i, 1] = roots[1]
+        else:
+            if not roots:
+                continue
+            if take_branch == "low":
+                th = roots[0]
+            elif take_branch == "high":
+                th = roots[-1]
+            else:
+                # heurística: si hay last_theta, toma la raíz más cercana
+                diffs = [abs(r - last_theta) for r in roots] if last_theta is not None else [0, 1e9]
+                th = roots[int(np.argmin(diffs))] if roots else np.nan
+            theta_list[i] = th
+            last_theta = th
 
-# Generar datos y graficar
-v0_c, th_c = compute_theta_curve_for_target(xt=12.0, yt=0.0,vmin=10.0, vmax=140.0,n_v=300,  # más puntos = más suave, 
-tol=0.05, grid=2001)
+    return (v0_list, theta_mat) if take_branch == "both" else (v0_list, theta_list)
 
-mask = np.isfinite(th_c)
+v0_c, th_both = curve_theta_vs_v0_for_target_xt(xt=12.0, n_v=100, grid_samples=121, take_branch="both")
 plt.figure(figsize=(6.0, 4.2))
-plt.plot(v0_c[mask], th_c[mask], marker='o', linestyle='-', linewidth=1.4, markersize=3)
-plt.xlabel(r"$v_0$  [m/s]")
-plt.ylabel(r"$\theta_0$  [deg]")
-plt.title(r"2.c  Condiciones que atinan a $(x,y)=(12\,\mathrm{m},0)$")
-plt.grid(True, which='both', axis='both', alpha=0.35)
-plt.tight_layout()
-plt.savefig("2.c.pdf")
-
+mask0 = np.isfinite(th_both[:,0]); mask1 = np.isfinite(th_both[:,1])
+plt.plot(v0_c[mask0], th_both[mask0,0], marker='o', linewidth=1.2, markersize=3, label="rama baja")
+plt.plot(v0_c[mask1], th_both[mask1,1], marker='s', linewidth=1.2, markersize=3, label="rama alta")
+plt.xlabel(r"$v_0$  [m/s]"); plt.ylabel(r"$\theta_0$  [deg]")
+plt.title(r"2.c  Condiciones que atinan a $(12\,\mathrm{m},0)$ — dos ramas")
+plt.grid(True, alpha=0.35); plt.legend(); plt.tight_layout(); plt.savefig("2.c.pdf")
