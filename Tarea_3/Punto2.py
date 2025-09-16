@@ -163,15 +163,12 @@ def make_event_hit_point(x_target, y_target, tol=0.10):
     hit_point.direction = 0.0
     return hit_point
 
-# --- Simulación con dos eventos; salida densa solo si se pide ---
+# --- Simulación con dos eventos y salida densa ---
 def simulate_shot_with_point_event(
     v0, theta_deg, x_target, y_target,
     y0=0.0, max_t=60.0, tol=0.05,
-    rtol=1e-9, atol=1e-12, max_step=0.002,
-    need_dense=False
+    rtol=1e-11, atol=1e-14, max_step=1e-3
 ):
-    #Retorna dict con: hit (bool), t_hit (float or None), sol (solve_ivp object), reason (str).
-    # 'hit' es True sólo si se detectó el evento del punto ANTES de tocar el suelo.
     theta = np.deg2rad(theta_deg)
     z0  = [0.0, y0, v0*np.cos(theta), v0*np.sin(theta)]
     ev_point = make_event_hit_point(x_target, y_target, tol=tol)
@@ -179,7 +176,7 @@ def simulate_shot_with_point_event(
         projectile_ode, (0.0, max_t), z0,
         events=(ev_point, hit_ground),
         rtol=rtol, atol=atol, max_step=max_step,
-        dense_output=bool(need_dense)  # <-- solo si vamos a medir distancia
+        dense_output=True
     )
     # eventos
     has_point  = sol.t_events[0].size > 0
@@ -196,66 +193,62 @@ def simulate_shot_with_point_event(
     reason = "hit_ground_first" if (has_ground and (t_hit_ground < t_hit_point)) else "no_event"
     return dict(hit=False, t_hit=None, sol=sol, reason=reason)
 
-# --- Utilidad: muestrear trayectoria hasta cierto tiempo (solo si sol.sol existe) ---
-def _simulate_path_until(sol, t_stop=None, npts=800):
+# --- Utilidades de precisión ---
+def _simulate_path_until(sol, t_stop=None, npts=2001):
     if t_stop is None: t_stop = sol.t[-1]
     tt = np.linspace(sol.t[0], t_stop, npts)
     if sol.sol is not None:
-        zz = sol.sol(tt);  return zz[0], zz[1]
-    # fallback: interp lineal si no hay salida densa
+        zz = sol.sol(tt);  return zz[0], zz[1], tt
+    # fallback (no debería ocurrir)
     xx = np.interp(tt, sol.t, sol.y[0]); yy = np.interp(tt, sol.t, sol.y[1])
-    return xx, yy
+    return xx, yy, tt
 
-# --- Distancia firmada al objetivo: min_t( dist - tol )
-def _clearance(v0, theta_deg, xt, yt, tol=0.05):
-    """
-    Valor negativo: entró al círculo (impacto). Valor positivo: no entró; es el 'gap' mínimo.
-    Esta evaluación pide salida densa SOLO aquí para muestrear bien la trayectoria.
-    """
-    out = simulate_shot_with_point_event(v0, theta_deg, xt, yt, tol=tol, need_dense=True)
+def _miss_distance(v0, theta_deg, xt, yt, tol=0.05):
+    """Distancia mínima al centro del blanco (positiva si no pega, negativa si entra)."""
+    out = simulate_shot_with_point_event(v0, theta_deg, xt, yt, tol=tol)
     if out["hit"]:
-        return -1e-9  # ya impactó (negativo)
-    # No impactó: medimos distancia mínima en toda la trayectoria simulada
-    xx, yy = _simulate_path_until(out["sol"])
+        return -1e-9  # ya impactó
+    xx, yy, _ = _simulate_path_until(out["sol"])
     dmin = float(np.min(np.hypot(xx - xt, yy - yt)))
-    return dmin - tol
+    return dmin
 
-# --- Buscador del ángulo: barrido moderado + Brent si hay bracket + refinamiento local ---
+# --- Buscador del ángulo: barrido fino + refinamiento local + intento de raíz ---
 def angle_to_hit_target_event(
     v0, x_target, y_target,
-    th_lo=10.0, th_hi=80.0, tol=0.10, grid=361
+    th_lo=10.0, th_hi=80.0, tol=0.10, grid=2001
 ):
     thetas = np.linspace(th_lo, th_hi, int(grid))
 
-    # 1) Barrido moderado con 'clearance' (negativo = hit; positivo = miss)
-    best = dict(theta=None, hit=False, miss_gap=np.inf, t_hit=None, reason="no_event")
-    prev_f = None
-    prev_th = None
-    bracket = None  # par (th_left, th_right) si detecto cambio de signo en clearance
+    # 1) Barrido fino
+    best = dict(theta=None, hit=False, miss_dist=np.inf, t_hit=None, reason="no_event")
+    prev_val = None
+    prev_th  = None
+    bracket  = None  # par (th_left, th_right) si detecto cambio de signo (miss->hit)
 
     for th in thetas:
-        f = _clearance(v0, th, x_target, y_target, tol)
-        # ¿hit directo?
-        if f < 0.0:
-            out = simulate_shot_with_point_event(v0, th, x_target, y_target, tol=tol)
+        out = simulate_shot_with_point_event(v0, th, x_target, y_target, tol=tol)
+        if out["hit"]:
             return th, dict(theta=float(th), hit=True, miss_dist=0.0,
                             t_hit=out["t_hit"], reason="hit_point")
+        # si no pega, mide cuán cerca estuvo
+        sol = out["sol"]
+        xx, yy, _ = _simulate_path_until(sol)
+        dmin = float(np.min(np.hypot(xx - x_target, yy - y_target)))
+        if dmin < best["miss_dist"]:
+            best.update(theta=float(th), miss_dist=dmin, t_hit=None, reason=out["reason"])
 
-        # guardar mejor 'miss' (gap positivo más pequeño)
-        if np.isfinite(f) and (f < best["miss_gap"]):
-            best.update(theta=float(th), miss_gap=float(f), t_hit=None, reason="no_event")
-
-        # guarda bracket si hay cambio de signo (prev_f * f < 0)
-        if (prev_f is not None) and np.isfinite(prev_f) and np.isfinite(f) and (prev_f * f < 0.0):
+        # guarda posibilidad de raíz si hay cambio de signo en f=tol - dmin
+        f = tol - dmin
+        if prev_val is not None and f*prev_val < 0:  # cambio de signo
             bracket = (prev_th, th)
-        prev_f, prev_th = f, th
+        prev_val, prev_th = f, th
 
-    # 2) Intento de raíz (Brent) si hay bracket: cierra donde clearance = 0
+    # 2) Intento de raíz (Brent) si hay bracket cercano
     if bracket is not None:
         from scipy.optimize import brentq
+        ffun = lambda th: tol - max(0.0, _miss_distance(v0, th, x_target, y_target, tol))
         try:
-            th_root = brentq(lambda th: _clearance(v0, th, x_target, y_target, tol),
-                             bracket[0], bracket[1], xtol=1e-5, rtol=1e-7, maxiter=60)
+            th_root = brentq(ffun, bracket[0], bracket[1], xtol=1e-8, rtol=1e-10, maxiter=200)
             out = simulate_shot_with_point_event(v0, th_root, x_target, y_target, tol=tol)
             if out["hit"]:
                 return float(th_root), dict(theta=float(th_root), hit=True, miss_dist=0.0,
@@ -263,150 +256,202 @@ def angle_to_hit_target_event(
         except Exception:
             pass
 
-    # 3) Refinamiento local alrededor del mejor miss (búsqueda áurea minimizando gap)
-    #    Ventana estrecha ±1.5° para pocas evaluaciones y alta precisión.
-    th0 = best["theta"] if best["theta"] is not None else 0.5*(th_lo + th_hi)
-    a = max(th_lo, th0 - 1.5);  b = min(th_hi, th0 + 1.5)
+    # 3) Refinamiento local alrededor del mejor miss (búsqueda áurea minimizando distancia)
+    th0 = best["theta"] if best["theta"] is not None else 0.5*(th_lo+th_hi)
+    a = max(th_lo, th0 - 2.0);  b = min(th_hi, th0 + 2.0)
     invphi = (np.sqrt(5.0) - 1.0)/2.0
     c = b - invphi*(b - a); d = a + invphi*(b - a)
-    fc = _clearance(v0, c, x_target, y_target, tol)
-    fd = _clearance(v0, d, x_target, y_target, tol)
-    for _ in range(40):
+    fc = _miss_distance(v0, c, x_target, y_target, tol)
+    fd = _miss_distance(v0, d, x_target, y_target, tol)
+    for _ in range(80):
         if fc <= fd:
             b, d, fd = d, c, fc
             c = b - invphi*(b - a)
-            fc = _clearance(v0, c, x_target, y_target, tol)
+            fc = _miss_distance(v0, c, x_target, y_target, tol)
         else:
             a, c, fc = c, d, fd
             d = a + invphi*(b - a)
-            fd = _clearance(v0, d, x_target, y_target, tol)
-    th_star = 0.5*(a + b)
-
+            fd = _miss_distance(v0, d, x_target, y_target, tol)
+    th_star = 0.5*(a+b)
     # intento final con el refinado
     out = simulate_shot_with_point_event(v0, th_star, x_target, y_target, tol=tol)
     if out["hit"]:
         return float(th_star), dict(theta=float(th_star), hit=True, miss_dist=0.0,
                                     t_hit=out["t_hit"], reason="hit_point")
+    # si aún no pega, reporta el mejor miss refinado
+    dfin = _miss_distance(v0, th_star, x_target, y_target, tol)
+    if dfin < best["miss_dist"]:
+        best.update(theta=float(th_star), miss_dist=float(dfin))
+    return None, best
 
-    # si aún no pega, reporta el mejor miss refinado (gap mínimo)
-    gap = _clearance(v0, th_star, x_target, y_target, tol)
-    if gap < best["miss_gap"]:
-        best.update(theta=float(th_star), miss_gap=float(gap))
-    # por compatibilidad, reporto miss_dist (= gap + tol) si lo prefieres;
-    # aquí dejo miss_dist ≈ 'cuánto faltó para entrar'
-    return None, dict(theta=best["theta"], hit=False,
-                      miss_dist=max(best["miss_gap"], 0.0),
-                      t_hit=None, reason="no_event")    
+
 #Punto 2c
-# ===== 2.c: θ0(v0) que atinan a (12 m, 0 m) con el evento del punto =====
-# Requiere definidas previamente:
-# - projectile_ode, hit_ground
-# - make_event_hit_point, simulate_shot_with_point_event
-# - angle_to_hit_target_event (versión optimizada con clearance)
-# - imports: numpy as np, matplotlib.pyplot as plt
 
-import time
+from scipy.optimize import brentq
 
-def theta_for_target_with_continuation(
-    v0, x_target=12.0, y_target=0.0,
-    tol=0.05,        # radio del círculo de impacto
-    th_lo=10.0, th_hi=80.0,
-    grid_full=361,   # grid del barrido “global”
-    local_win=5.0,   # ventana alrededor del último θ* (continuation)
-    grid_local=241   # grid del barrido “local”
-):
+def _x_of_theta_grid(v0, thetas):
+    """Evalúa x(θ) con range_for, devolviendo un array (posibles NaN)."""
+    xs = np.empty_like(thetas, dtype=float)
+    for i, th in enumerate(thetas):
+        xs[i] = range_for(v0, float(th))
+    return xs
+
+def _find_brackets_for_xt(thetas, xs, xt):
     """
-    Intenta hallar un ángulo θ que impacte (x_target, y_target) para un v0 dado.
-    1) Si se dispone de un θ previo (continuation), busca primero en [θ_prev±local_win].
-    2) Si no hay éxito, intenta en el rango completo [th_lo, th_hi].
-    Devuelve: (theta_hit, info_dict) con theta_hit=float o np.nan.
+    Devuelve lista de (thL, thR) donde (xs-xt) cambia de signo.
+    Ignora puntos no finitos. Puede devolver 0, 1 o 2 brackets.
     """
-    # 'last_theta' se inyecta desde afuera vía cierre (ver compute_curve abajo)
-    # aquí definimos un pequeño helper que recurre a angle_to_hit_target_event
-    def _try_window(a, b, grid):
-        a = max(th_lo, a); b = min(th_hi, b)
-        return angle_to_hit_target_event(
-            v0, x_target, y_target,
-            th_lo=a, th_hi=b,
-            tol=tol, grid=grid
-        )
+    f = xs - xt
+    brackets = []
+    # limpiamos NaN/inf reemplazando por None para saltarlos
+    valid = np.isfinite(f)
+    for i in range(len(thetas) - 1):
+        if not (valid[i] and valid[i+1]):
+            continue
+        a, b = f[i], f[i+1]
+        if a == 0.0:  # justo en el blanco
+            # bracket mínimo alrededor
+            if i > 0 and np.isfinite(f[i-1]) and f[i-1]*a < 0:
+                brackets.append((thetas[i-1], thetas[i]))
+            elif np.isfinite(b) and a*b < 0:
+                brackets.append((thetas[i], thetas[i+1]))
+            else:
+                # si es exactamente cero pero sin cambio, crea un micro-bracket local
+                eps = 1e-3
+                brackets.append((thetas[i]-eps, thetas[i]+eps))
+        elif a*b < 0:
+            brackets.append((thetas[i], thetas[i+1]))
+    return brackets
 
-    # 1) Intento local (si caller provee last_theta via closure)
-    theta_hit, info = None, None
-    if hasattr(theta_for_target_with_continuation, "_last_theta") and \
-       (theta_for_target_with_continuation._last_theta is not None):
-        th0 = theta_for_target_with_continuation._last_theta
-        theta_hit, info = _try_window(th0 - local_win, th0 + local_win, grid_local)
-        if info.get("hit", False):
-            return float(theta_hit), info  # éxito local
+def _refine_root_brent(v0, xt, thL, thR, xtol=1e-6, rtol=1e-8, maxiter=80):
+    """Refina raíz de f(θ)=x(θ)-xt en [thL,thR] con Brent."""
+    def f(th):
+        x = range_for(v0, float(th))
+        if not np.isfinite(x):
+            # pequeño truco: devuelve un valor grande del signo de los extremos
+            return np.nan
+        return x - xt
+    # Intenta asegurar que f(thL) y f(thR) son finitos; si no, abre un poco
+    def finite_f(th, step=1e-3, tries=5):
+        val = f(th)
+        if np.isfinite(val):
+            return th, val
+        # intentar pequeñas corridas
+        for k in range(1, tries+1):
+            for s in (-1.0, 1.0):
+                th2 = th + s*k*step
+                if th2 <= 10.0 or th2 >= 80.0:
+                    continue
+                val2 = f(th2)
+                if np.isfinite(val2):
+                    return th2, val2
+        return th, val
+    thL2, fL = finite_f(thL)
+    thR2, fR = finite_f(thR)
+    if not (np.isfinite(fL) and np.isfinite(fR)):
+        raise ValueError("No se pudo obtener valores finitos para el bracket")
+    if fL == 0.0:
+        return float(thL2)
+    if fR == 0.0:
+        return float(thR2)
+    if fL * fR > 0:
+        # como fallback, intenta un bracket muy pequeño alrededor del punto medio
+        mid = 0.5*(thL2 + thR2)
+        dm = 1e-2
+        return brentq(lambda th: f(th), mid-dm, mid+dm, xtol=xtol, rtol=rtol, maxiter=maxiter)
+    # Brent normal
+    return brentq(lambda th: f(th), thL2, thR2, xtol=xtol, rtol=rtol, maxiter=maxiter)
 
-    # 2) Intento global (rango completo)
-    theta_hit, info = _try_window(th_lo, th_hi, grid_full)
-    return (float(theta_hit) if info.get("hit", False) else np.nan), info
-
-
-def compute_curve_theta_vs_v0_for_target(
-    x_target=12.0, y_target=0.0,
-    vmin=10.0, vmax=140.0, n_v=150,
-    tol=0.05, th_lo=10.0, th_hi=80.0,
-    grid_full=361, grid_local=241, local_win=5.0,
-    progress_every=10
-):
+def theta_roots_for_xt(v0, xt=12.0, th_lo=10.0, th_hi=80.0,
+                       grid_samples=121, refine=True):
     """
-    Recorre v0 en [vmin, vmax] y obtiene θ*(v0) que impacta el objetivo (x_target, y_target).
-    Usa continuation: la solución previa guía el bracket del siguiente v0.
-    Devuelve (v0_list, theta_list).
+    Devuelve lista de soluciones en grados (puede tener 0, 1 o 2 elementos).
+    - Primero muestrea x(θ) en un grid (121 por defecto).
+    - Si max(x)<xt => sin solución.
+    - Encuentra brackets y (opcional) refina con Brent.
+    """
+    thetas = np.linspace(th_lo, th_hi, int(grid_samples))
+    xs = _x_of_theta_grid(v0, thetas)
+    # chequeo rápido
+    if not np.any(np.isfinite(xs)) or (np.nanmax(xs) < xt):
+        return []  # no hay solución
+    brackets = _find_brackets_for_xt(thetas, xs, xt)
+    if not brackets:
+        # como extra, densificar y volver a intentar
+        thetas2 = np.linspace(th_lo, th_hi, 401)
+        xs2 = _x_of_theta_grid(v0, thetas2)
+        if not np.any(np.isfinite(xs2)) or (np.nanmax(xs2) < xt):
+            return []
+        brackets = _find_brackets_for_xt(thetas2, xs2, xt)
+        if not brackets:
+            return []
+
+    roots = []
+    for (a, b) in brackets:
+        if not refine:
+            roots.append(0.5*(a+b))
+            continue
+        try:
+            root = _refine_root_brent(v0, xt, a, b, xtol=1e-6, rtol=1e-8, maxiter=80)
+            roots.append(float(root))
+        except Exception:
+            # si falla Brent, deja el centro del bracket como aproximación
+            roots.append(float(0.5*(a+b)))
+    # ordena por valor (rama baja primero)
+    roots = sorted(roots)
+    # elimina duplicados casi iguales
+    dedup = []
+    for r in roots:
+        if not dedup or abs(r - dedup[-1]) > 1e-3:
+            dedup.append(r)
+    return dedup
+
+
+def curve_theta_vs_v0_for_target_xt(xt=12.0, vmin=10.0, vmax=140.0, n_v=150,
+                                    th_lo=10.0, th_hi=80.0, grid_samples=121,
+                                    take_branch="low"):
+    """
+    Devuelve (v0_list, theta_list). Si hay 2 soluciones:
+      - take_branch="low": toma la de menor ángulo
+      - take_branch="high": la de mayor ángulo
+      - take_branch="both": devuelve una matriz (N, 2) con NaN donde falte
     """
     v0_list = np.linspace(vmin, vmax, int(n_v))
-    theta_list = np.full_like(v0_list, np.nan, dtype=float)
+    if take_branch == "both":
+        theta_mat = np.full((len(v0_list), 2), np.nan, dtype=float)
+    else:
+        theta_list = np.full(len(v0_list), np.nan, dtype=float)
 
-    # inicializa “continuation” (compartida por la función local)
-    theta_for_target_with_continuation._last_theta = None
-
-    t0 = time.perf_counter()
+    last_theta = None  # para escoger rama consistente si deseas
     for i, v0 in enumerate(v0_list):
-        th, info = theta_for_target_with_continuation(
-            v0, x_target=x_target, y_target=y_target, tol=tol,
-            th_lo=th_lo, th_hi=th_hi,
-            grid_full=grid_full, local_win=local_win, grid_local=grid_local
-        )
-        theta_list[i] = th
-        if np.isfinite(th):
-            # actualiza el “last_theta” para el siguiente v0
-            theta_for_target_with_continuation._last_theta = th
+        roots = theta_roots_for_xt(v0, xt=xt, th_lo=th_lo, th_hi=th_hi,
+                                   grid_samples=grid_samples, refine=True)
+        if take_branch == "both":
+            if len(roots) >= 1:
+                theta_mat[i, 0] = roots[0]
+            if len(roots) >= 2:
+                theta_mat[i, 1] = roots[1]
+        else:
+            if not roots:
+                continue
+            if take_branch == "low":
+                th = roots[0]
+            elif take_branch == "high":
+                th = roots[-1]
+            else:
+                # heurística: si hay last_theta, toma la raíz más cercana
+                diffs = [abs(r - last_theta) for r in roots] if last_theta is not None else [0, 1e9]
+                th = roots[int(np.argmin(diffs))] if roots else np.nan
+            theta_list[i] = th
+            last_theta = th
 
-        # progreso
-        if progress_every and ((i+1) % progress_every == 0 or (i+1) == len(v0_list)):
-            dt = time.perf_counter() - t0
-            print(f"[{i+1}/{n_v}] v0={v0:.1f}  θ*=" +
-                  (f"{th:.3f}°" if np.isfinite(th) else "—") +
-                  f"   t={dt:.1f}s")
+    return (v0_list, theta_mat) if take_branch == "both" else (v0_list, theta_list)
 
-    return v0_list, theta_list
-
-
-# ===== Ejecutar 2.c y guardar figura =====
-t_all0 = time.perf_counter()
-
-v0_c, th_c = compute_curve_theta_vs_v0_for_target(
-    x_target=12.0, y_target=0.0,
-    vmin=10.0, vmax=140.0, n_v=150,
-    tol=0.05, th_lo=10.0, th_hi=80.0,
-    grid_full=361, grid_local=241, local_win=5.0,
-    progress_every=10
-)
-
-t_all1 = time.perf_counter()
-print(f"Tiempo total 2.c: {t_all1 - t_all0:.2f} s  (~{(t_all1 - t_all0)/60:.2f} min)")
-
-# Graficar solo puntos con solución (theta finita)
-mask = np.isfinite(th_c)
+v0_c, th_both = curve_theta_vs_v0_for_target_xt(xt=12.0, n_v=100, grid_samples=121, take_branch="both")
 plt.figure(figsize=(6.0, 4.2))
-plt.plot(v0_c[mask], th_c[mask], marker='o', linewidth=1.3, markersize=3)
-plt.xlabel(r"$v_0$  [m/s]")
-plt.ylabel(r"$\theta_0$  [deg]")
-plt.title(r"2.c  Condiciones que atinan a $(12\,\mathrm{m},0)$ (evento con $tol$)")
-plt.grid(True, alpha=0.35)
-plt.tight_layout()
-plt.savefig("2.c.pdf")
-
+mask0 = np.isfinite(th_both[:,0]); mask1 = np.isfinite(th_both[:,1])
+plt.plot(v0_c[mask0], th_both[mask0,0], marker='o', linewidth=1.2, markersize=3, label="rama baja")
+plt.plot(v0_c[mask1], th_both[mask1,1], marker='s', linewidth=1.2, markersize=3, label="rama alta")
+plt.xlabel(r"$v_0$  [m/s]"); plt.ylabel(r"$\theta_0$  [deg]")
+plt.title(r"2.c  Condiciones que atinan a $(12\,\mathrm{m},0)$ — dos ramas")
+plt.grid(True, alpha=0.35); plt.legend(); plt.tight_layout(); plt.savefig("2.c.pdf")
