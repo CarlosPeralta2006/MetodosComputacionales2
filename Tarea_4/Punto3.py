@@ -1,207 +1,189 @@
-# Punto_3.py — Solitones en un plasma libre (KdV) con fronteras periódicas
-# Ecuación: phi_t + phi*phi_x + delta^2 * phi_xxx = 0
-# Esquema: Pseudo-espectral de Fourier + ETDRK4 (Kassam & Trefethen)
-# Salidas: 3_evolucion.mp4, 3_conservadas.pdf, 3_final.png
-# Requisitos: numpy, matplotlib; (opcional) ffmpeg instalado para mp4
-
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+KdV con método pseudo-espectral + ETDRK4.
+Guarda salidas en C:/Users/<TU_USUARIO>/Downloads/Solitones_KdV
+"""
 import numpy as np
+from pathlib import Path
+
+# --- ffmpeg embebido (no depende del PATH del sistema) ---
+import matplotlib as mpl
+import imageio_ffmpeg
+mpl.rcParams['animation.ffmpeg_path'] = imageio_ffmpeg.get_ffmpeg_exe()
+
+import matplotlib
+matplotlib.use('Agg')  # backend sin ventana
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-# ------------------------
-# 0) Parámetros principales
-# ------------------------
-Lx    = 40.0        # longitud del dominio [0, Lx]
-N     = 512         # puntos de malla (par, potencia de 2 recomendado)
-delta = 0.22        # parámetro de dispersión δ
-T     = 80.0        # tiempo final de simulación
-dt    = 0.02        # paso temporal
-save_every = 3      # guardar 1 frame de animación cada 'save_every' pasos
+# ===== Carpeta de salida (Descargas/Solitones_KdV) =====
+SAVE_DIR = Path.home() / "Downloads" / "Solitones_KdV"
+SAVE_DIR.mkdir(parents=True, exist_ok=True)
+def SAVE(name: str) -> str:
+    return str(SAVE_DIR / name)
 
-# Condición inicial (elige una):
-IC_mode = "coseno"  # "coseno" o "sech2_multi"
+# ----------------------
+# Utilidades
+# ----------------------
+def sech(x):
+    return 1.0 / np.cosh(x)
 
-# Coseno (clásico para ver descomposición en solitones)
-A0  = 0.9           # amplitud coseno
-m   = 1             # número de onda entero (k0 = 2π m / Lx)
+# ----------------------
+# Parámetros de simulación (preset tren de solitones)
+# ----------------------
+propagate_right = True  # True -> derecha ; False -> izquierda
+delta = 0.06            # menos dispersión -> tren más nítido
+Lx    = 40.0
+N     = 1024            # más resolución espacial
+T     = 80.0
+dt    = 0.01
 
-# Suma de solitones (aprox) tipo sech^2 para estudiar colisiones:
-sols = [
-    # (A, b, x0, v_aprox) — solo A, b, x0 se usan para inicial
-    (1.0, 0.5, 10.0, 0.0),
-    (0.6, 0.35, 22.0, 0.0),
-]
+x  = np.linspace(-Lx/2, Lx/2, N, endpoint=False)
+dx = x[1] - x[0]
 
-# ------------------------
-# 1) Mallado y operadores
-# ------------------------
-x  = np.linspace(0.0, Lx, N, endpoint=False)
-dx = Lx / N
-
-# Números de onda (FFT) coherentes con derivadas periódicas
-k = 2.0*np.pi*np.fft.fftfreq(N, d=dx)  # [0, +, -, ...]
-ik = 1j * k
-ik3 = (1j * k)**3
-
-# Operador lineal en espacio de Fourier: L = delta^2 * i k^3
-Lop = delta**2 * ik3
-
-# 2/3 dealiasing mask (opcional, ayuda con el término no lineal)
-kcut = int(N/3)
-dealias = np.zeros(N, dtype=bool)
-dealias[:kcut] = True
-dealias[-kcut:] = True
-
-# ------------------------
-# 2) Condición inicial
-# ------------------------
-if IC_mode == "coseno":
-    phi = A0 * np.cos(2.0*np.pi*m*x/Lx)
-elif IC_mode == "sech2_multi":
-    def sech(z): return 1.0/np.cosh(z)
-    phi = np.zeros_like(x)
-    for (A, b, x0, _) in sols:
-        phi += A * sech(b*(x - x0))**2
+# Condición inicial
+init_condition = 'cosine'   # 'cosine' o 'sech'
+if init_condition == 'cosine':
+    A0 = 2.0
+    phi0 = A0 * np.cos(2.0 * np.pi * x / Lx)
 else:
-    raise ValueError("IC_mode no reconocido.")
+    A, B = 8.0, 5.0
+    shift1, shift2 = 15.0, 5.0
+    phi0 = 3*A**2 * sech(0.5*A*(x + shift1))**2 + 3*B**2 * sech(0.5*B*(x + shift2))**2
 
-# ------------------------
-# 3) Preparar ETDRK4
-#     d/dt phihat = L*phihat + Nhat(phi)
-#     con Nhat = FFT( - (1/2)*d_x(phi^2) ) = - (ik/2) FFT(phi^2)
-# ------------------------
-phihat = np.fft.fft(phi)
+# Espacio de Fourier
+v  = np.fft.fft(phi0)
+k  = 2.0 * np.pi * np.fft.fftfreq(N, d=Lx/N)
+ik = 1j * k
 
-h  = dt
-E  = np.exp(Lop*h)
-E2 = np.exp(Lop*h/2.0)
+# Operador lineal L = ± i δ^2 k^3  (signo elige dirección)
+L = ((-1j if propagate_right else 1j) * (k**3)) * (delta**2)
 
-# Coeficientes ETDRK4 (Cox & Matthews) por cuadratura racional
-# Construimos con una cuadratura de contorno simple:
-M_etd = 32
-r = np.exp(1j*np.pi*(np.arange(1, M_etd+1) - 0.5)/M_etd)  # puntos en semicírculo
-LR = h*Lop[:, None] + r[None, :]  # (N x M)
-Q  = h*np.mean( (np.exp(LR/2.0) - 1.0) / LR , axis=1 )
-f1 = h*np.mean( (-4.0 - LR + np.exp(LR)*(4.0 - 3.0*LR + LR**2)) / LR**3 , axis=1 )
-f2 = h*np.mean( ( 2.0 + LR + np.exp(LR)*(-2.0 + LR)) / LR**3 , axis=1 )
-f3 = h*np.mean( (-4.0 - 3.0*LR - LR**2 + np.exp(LR)*(4.0 - LR)) / LR**3 , axis=1 )
+# ----------------------
+# Dealiasing 2/3 para el no lineal
+# ----------------------
+kmax    = np.max(np.abs(k))
+dealias = (np.abs(k) <= (2.0/3.0)*kmax)
 
-# ------------------------
-# 4) Utilidades
-# ------------------------
-def nonlinear_hat(phihat_):
-    """N̂ = FFT( - (1/2) d_x (phi^2) ) con dealiasing 2/3."""
-    phi_ = np.fft.ifft(phihat_).real
-    phi2 = phi_**2
-    phi2hat = np.fft.fft(phi2)
-    # dealias no lineal (cortar altas frecuencias del producto)
-    phi2hat[~dealias] = 0.0
-    return -(ik/2.0) * phi2hat
+# No lineal: N̂ = -0.5 i k * FFT(φ^2), con dealiasing
+g = -0.5j * k
+def Nhat(vhat):
+    phi = np.fft.ifft(vhat).real
+    phi2hat = np.fft.fft(phi*phi)
+    phi2hat[~dealias] = 0.0  # regla 2/3
+    return g * phi2hat
 
-def conserved_quantities(phi_arr):
-    """Masa, Momento, 'Energía' discretas (trapezoide = dx * sum)."""
-    # Siguiendo el espíritu del enunciado (nombres y forma general). :contentReference[oaicite:1]{index=1}
-    M = np.sum(phi_arr) * dx
-    P = np.sum(phi_arr**2) * dx
-    phi_x = np.fft.ifft(ik * np.fft.fft(phi_arr)).real
-    E = np.sum( (1.0/3.0)*phi_arr**3 - (delta*phi_x)**2 ) * dx
-    return M, P, E
+# ----------------------
+# Coeficientes ETDRK4 (Kassam–Trefethen)
+# ----------------------
+E  = np.exp(dt * L)
+E2 = np.exp(dt * L / 2.0)
+M  = 64
+r  = np.exp(1j * np.pi * (np.arange(1, M+1) - 0.5) / M)  # semicírculo
+LR = dt * L[:, None] + r[None, :]
 
-# ------------------------
-# 5) Bucle temporal + almacenamiento para animación
-# ------------------------
-nsteps = int(np.round(T/dt))
-frames_x = []
-frames_phi = []
-t_hist = []
-M_hist, P_hist, E_hist = [], [], []
+Q  = dt * np.mean((np.exp(LR/2.0) - 1.0) / LR, axis=1)
+f1 = dt * np.mean((-4.0 - LR + np.exp(LR)*(4.0 - 3.0*LR + LR**2)) / (LR**3), axis=1)
+# f2 correcto:
+f2 = dt * np.mean(( 2.0 + LR + np.exp(LR)*(-2.0 + LR)) / (LR**3), axis=1)
+f3 = dt * np.mean((-4.0 - 3.0*LR - LR**2 + np.exp(LR)*(4.0 - LR)) / (LR**3), axis=1)
 
-# Registrar estado inicial
-M, P, E = conserved_quantities(np.fft.ifft(phihat).real)
-t_hist.append(0.0); M_hist.append(M); P_hist.append(P); E_hist.append(E)
-frames_x.append(x.copy()); frames_phi.append(np.fft.ifft(phihat).real.copy())
+# ----------------------
+# Históricos
+# ----------------------
+phi   = np.fft.ifft(v).real
+phi_x = np.fft.ifft(ik * v).real
 
-for n in range(1, nsteps+1):
-    t = n*dt
+mass_list   = [np.sum(phi) * dx]
+mom_list    = [np.sum(phi**2) * dx]
+energy_list = [np.sum(((1.0/3.0)*phi**3 - (delta*phi_x)**2) * dx)]
+times       = [0.0]
 
-    Nv  = nonlinear_hat(phihat)
-    a   = E2 * phihat + Q * Nv
-    Na  = nonlinear_hat(a)
-    b   = E2 * phihat + Q * Na
-    Nb  = nonlinear_hat(b)
-    c   = E2 * a      + Q * (2.0*Nb - Nv)
-    Nc  = nonlinear_hat(c)
+min_phi = phi.min(); max_phi = phi.max()
+frame_step = 5
+frames_phi = [phi.copy()]
+frames_t   = [0.0]
 
-    phihat = E*phihat + f1*Nv + f2*(Na+Nb) + f3*Nc
+# ----------------------
+# Integración temporal (ETDRK4 + dealias + modo cero)
+# ----------------------
+steps = int(np.round(T/dt))
+t = 0.0
+for n in range(1, steps+1):
+    Nv  = Nhat(v)
+    a   = E2 * v + Q * Nv
+    Na  = Nhat(a)
+    b   = E2 * v + Q * Na
+    Nb  = Nhat(b)
+    c   = E2 * a + Q * (2.0*Nb - Nv)
+    Nc  = Nhat(c)
 
-    if n % save_every == 0 or n == nsteps:
-        phi = np.fft.ifft(phihat).real
-        M, P, E = conserved_quantities(phi)
-        t_hist.append(t); M_hist.append(M); P_hist.append(P); E_hist.append(E)
-        frames_x.append(x.copy()); frames_phi.append(phi.copy())
+    v   = E * v + f1*Nv + f2*(Na + Nb) + f3*Nc
 
-# ------------------------
-# 6) Guardar figura de cantidades conservadas
-# ------------------------
-plt.figure(figsize=(6.5,4.0))
-plt.plot(t_hist, M_hist, label='Masa')
-plt.plot(t_hist, P_hist, label='Momento')
-plt.plot(t_hist, E_hist, label='Energía')
-plt.xlabel('t'); plt.ylabel('valor'); plt.legend()
-plt.tight_layout()
-plt.savefig('3_conservadas.pdf', dpi=200)
-plt.close()
+    # Forzar masa ~ 0 (eliminar deriva del modo cero)
+    v[0] = 0.0
 
-# ------------------------
-# 7) Guardar snapshot final
-# ------------------------
-plt.figure(figsize=(7.0,3.0))
-plt.plot(frames_x[-1], frames_phi[-1], lw=1.8)
-plt.title(f'KdV: N={N}, dx={dx:.3f}, dt={dt}, delta={delta}')
-plt.xlabel('x'); plt.ylabel('phi(x,t_final)')
-plt.tight_layout()
-plt.savefig('3_final.png', dpi=200)
-plt.close()
+    t   += dt
+    phi  = np.fft.ifft(v).real
+    phi_x= np.fft.ifft(ik * v).real
 
-# ------------------------
-# 8) Animación (si hay ffmpeg)
-# ------------------------
-fig, ax = plt.subplots(figsize=(7.0,3.2))
+    mass   = np.sum(phi) * dx
+    mom    = np.sum(phi**2) * dx
+    energy = np.sum(((1.0/3.0)*phi**3 - (delta*phi_x)**2) * dx)
+
+    mass_list.append(mass); mom_list.append(mom); energy_list.append(energy); times.append(t)
+
+    if phi.min() < min_phi: min_phi = phi.min()
+    if phi.max() > max_phi: max_phi = phi.max()
+
+    if (n % frame_step == 0) or (n == steps):
+        frames_phi.append(phi.copy()); frames_t.append(t)
+
+# ----------------------
+# Gráfica final
+# ----------------------
+fig, ax = plt.subplots()
+ax.plot(x, phi, lw=1.8, label=fr'$t = {T}$')
+ax.set_xlabel('x'); ax.set_ylabel('φ(x,t)'); ax.set_title('Perfil final de φ(x)')
+ax.grid(True); ax.legend(); fig.tight_layout()
+fig.savefig(SAVE('3_final.png'))
+
+# Conservadas
+fig, axs = plt.subplots(3, 1, figsize=(6.5,8), sharex=True)
+axs[0].plot(times, mass_list);   axs[0].set_ylabel('Masa');    axs[0].grid(True)
+axs[1].plot(times, mom_list);    axs[1].set_ylabel('Momento'); axs[1].grid(True)
+axs[2].plot(times, energy_list); axs[2].set_ylabel('Energía'); axs[2].set_xlabel('t'); axs[2].grid(True)
+fig.suptitle('Evolución de cantidades conservadas')
+fig.tight_layout(rect=[0,0,1,0.96])
+fig.savefig(SAVE('3_conservadas.pdf'))
+
+# ----------------------
+# Animación MP4
+# ----------------------
+fig, ax = plt.subplots(figsize=(7.0, 3.2))
+ax.set_xlabel('x'); ax.set_ylabel('φ(x,t)'); ax.grid(True)
+ax.set_xlim(x[0], x[-1] + dx)
+pad = 0.1*(max_phi - min_phi) if max_phi != min_phi else 0.1
+ax.set_ylim(min_phi - pad, max_phi + pad)
 line, = ax.plot([], [], lw=1.8)
-ax.set_xlim(0, Lx)
-ymin = min(np.min(f) for f in frames_phi)
-ymax = max(np.max(f) for f in frames_phi)
-pad = 0.1*(ymax - ymin + 1e-12)
-ax.set_ylim(ymin - pad, ymax + pad)
-ax.set_xlabel('x'); ax.set_ylabel('phi')
-title = ax.set_title('')
 
 def init():
     line.set_data([], [])
-    title.set_text('')
-    return line, title
+    ax.set_title('Evolución de φ(x,t)')
+    return (line,)
 
-def animate(i):
-    line.set_data(frames_x[i], frames_phi[i])
-    title.set_text(f't = {i*save_every*dt:.2f}')
-    return line, title
+def animate(j):
+    line.set_data(x, frames_phi[j])
+    ax.set_title(f'Evolución de φ(x,t) — t = {frames_t[j]:.2f}')
+    return (line,)
 
 ani = animation.FuncAnimation(fig, animate, init_func=init,
                               frames=len(frames_phi), interval=25, blit=True)
 
-try:
-    Writer = animation.writers['ffmpeg']
-    writer = Writer(fps=30, metadata=dict(artist='KdV'), bitrate=1800)
-    ani.save('3_evolucion.mp4', writer=writer, dpi=180)
-except Exception as e:
-    # Si no hay ffmpeg, guarda una serie de PNGs básicos
-    for i in range(len(frames_phi)):
-        ax.clear()
-        ax.plot(frames_x[i], frames_phi[i], lw=1.8)
-        ax.set_xlim(0, Lx); ax.set_ylim(ymin - pad, ymax + pad)
-        ax.set_title(f't = {i*save_every*dt:.2f}')
-        ax.set_xlabel('x'); ax.set_ylabel('phi')
-        fig.tight_layout()
-        fig.savefig(f'3_evolucion_{i:04d}.png', dpi=150)
-    # Cierra para no dejar ventanas activas
+writer = animation.FFMpegWriter(fps=30, bitrate=1800, codec='libx264',
+                                extra_args=['-pix_fmt', 'yuv420p'])
+ani.save(SAVE('3_evolucion.mp4'), writer=writer, dpi=120)
 plt.close(fig)
+
+print(f"\nListo. Busca tus archivos en:\n{SAVE_DIR}\n")
