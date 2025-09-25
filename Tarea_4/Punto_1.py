@@ -1,3 +1,9 @@
+# Punto_1.py — MC2: Taller 4, Punto 1
+# Evolución temporal de la ecuación de Schrödinger 1D
+# Requisitos del taller: sin plt.show(), guardar videos .mp4 y gráficas PDF
+# Genera: 1.a.mp4, 1.a.pdf, 1.b.mp4, 1.c.mp4, 1.c.pdf
+# Autor: (rellenar)
+
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")  # backend sin pantalla
@@ -5,38 +11,28 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter
 from numpy.fft import fft, ifft, fftfreq
 
+# ============================
 # Utilidades numéricas
+# ============================
 
 def split_step_schrodinger(psi0, Vx, x, alpha=0.1, tmax=150.0, dt=0.02, frames_target=600,
                             fps=30, video_name="video.mp4", title="",
                             compute_moments=False, pdf_name=None,
-                            potential_overlay=True):
+                            potential_overlay=True,
+                            ymax_fixed=1.2):
     """
-    Evoluciona \psi(t,x) con el método de Split-Step Fourier para
-    \partial_t psi = i [ alpha * \partial_xx - V(x) ] psi.
+    Evoluciona \psi(t,x) con Split-Step Fourier:
+        ∂_t ψ = i [ α ∂_xx − V(x) ] ψ
 
-    - psi0: condición inicial compleja, shape (N,)
-    - Vx  : potencial en x, shape (N,)
-    - x   : malla espacial (uniforme), shape (N,)
-    - alpha: constante adimensional del término cinético
-    - tmax, dt: tiempo máximo y paso temporal
-    - frames_target: número aprox. de cuadros en el video
-    - fps: cuadros por segundo del mp4
-    - video_name: nombre del archivo .mp4 a exportar
-    - title: título para la figura del video
-    - compute_moments: si True, calcula mu(t) y sigma(t)
-    - pdf_name: si se provee y compute_moments=True, exporta PDF con mu(t) ± sigma(t)
-    - potential_overlay: si True, dibuja V(x) reescalado en el video
+    Mantiene el eje y FIJO en [0, ymax_fixed].
     """
     N = x.size
-    L = x[-1] - x[0]
     dx = x[1] - x[0]
 
-    # Malla de momentos k (periodicidad del SSFM)
+    # k de Fourier (periodicidad del SSFM)
     k = 2.0 * np.pi * fftfreq(N, d=dx)
 
-    # Operadores de propagación (Strang splitting):
-    # medio paso en V, paso completo en T
+    # Propagadores (Strang)
     expV_half = np.exp(-1j * Vx * dt / 2.0)
     expT_full = np.exp( 1j * alpha * (k**2) * dt )
 
@@ -44,16 +40,12 @@ def split_step_schrodinger(psi0, Vx, x, alpha=0.1, tmax=150.0, dt=0.02, frames_t
     fig, ax = plt.subplots(figsize=(7.2, 4.0))
     line_prob, = ax.plot([], [], lw=1.8, label=r"$|\psi|^2$")
     if potential_overlay:
-        # Reescala V(x) para visualizarlo en la misma figura que |psi|^2
         Vmin, Vmax = np.min(Vx), np.max(Vx)
-        # Evitar división por cero si V es constante
         Vscaled = (Vx - Vmin) / (Vmax - Vmin + 1e-12)
-        pot_plot, = ax.plot(x, Vscaled, lw=1.0, ls='--', label="V(x) (escala 0–1)")
-    else:
-        pot_plot = None
+        ax.plot(x, Vscaled, lw=1.0, ls='--', label="V(x) (escala 0–1)")
 
     ax.set_xlim(x[0], x[-1])
-    ax.set_ylim(0.0, 1.2)
+    ax.set_ylim(0.0, float(ymax_fixed))  # <<< y fijo
     ax.set_xlabel("x")
     ax.set_ylabel(r"Densidad de probabilidad $|\psi|^2$")
     ax.set_title(title)
@@ -62,36 +54,29 @@ def split_step_schrodinger(psi0, Vx, x, alpha=0.1, tmax=150.0, dt=0.02, frames_t
 
     writer = FFMpegWriter(fps=fps, metadata={"title": title, "artist": "MC2 Taller 4"})
 
-    # Número de pasos y stride para aproximar frames_target
+    # Número de pasos y stride
     n_steps = int(np.round(tmax / dt))
     stride = max(1, n_steps // max(1, frames_target))
 
-    # Normalización (con trapecio)
+    # Normalización (trapecio)
     def normalize(psi):
         prob = np.trapz(np.abs(psi)**2, x)
         return psi / np.sqrt(prob)
 
-    times = []
-    mus = []
-    sigmas = []
-
+    times, mus, sigmas = [], [], []
     psi = normalize(psi0.astype(np.complex128))
 
     with writer.saving(fig, video_name, dpi=140):
         for n in range(n_steps + 1):
             t = n * dt
 
-            # Guardar frame cada 'stride'
             if n % stride == 0:
                 prob_density = np.abs(psi)**2
                 line_prob.set_data(x, prob_density)
-                ax.set_ylim(0.0, max(1e-6, prob_density.max()) * 1.15)
                 writer.grab_frame()
 
                 if compute_moments:
-                    # <x>
                     mu = np.trapz(x * prob_density, x)
-                    # <(x-mu)^2>
                     sigma2 = np.trapz((x - mu)**2 * prob_density, x)
                     times.append(t)
                     mus.append(mu)
@@ -100,18 +85,18 @@ def split_step_schrodinger(psi0, Vx, x, alpha=0.1, tmax=150.0, dt=0.02, frames_t
             if n == n_steps:
                 break
 
-            # Paso SSFM: V/2 -> T -> V/2
+            # Strang: V/2 -> T -> V/2
             psi = expV_half * psi
             psi_k = fft(psi)
             psi_k *= expT_full
             psi = ifft(psi_k)
             psi = expV_half * psi
 
-            # Renormalizar (robustez numérica)
             psi = normalize(psi)
 
     plt.close(fig)
 
+    # PDF con momentos, si aplica
     if compute_moments and pdf_name is not None:
         times = np.asarray(times)
         mus = np.asarray(mus)
@@ -130,7 +115,10 @@ def split_step_schrodinger(psi0, Vx, x, alpha=0.1, tmax=150.0, dt=0.02, frames_t
         plt.close(fig2)
 
 
+
+# ============================
 # Condiciones del taller
+# ============================
 
 def gaussian_packet(x, x0=10.0, k0=2.0, width=0.5):
     """Paquete gaussiano: exp(-2*(x-x0)^2) * exp(-i k0 x) con ancho opcional.
@@ -139,8 +127,9 @@ def gaussian_packet(x, x0=10.0, k0=2.0, width=0.5):
     # Si width es la desviación estandar s, un gaussiano típico es exp(-(x-x0)^2/(2 s^2)).
     # El enunciado usa exp(-2 (x-x0)^2); eso equivale a s = 1/2.
     s = width
-    env = np.exp(- (x - x0)*2 / (2.0 * s**2)) if width is not None else np.exp(-2.0 * (x - x0)*2)
+    env = np.exp(- (x - x0)**2 / (2.0 * s**2)) if width is not None else np.exp(-2.0 * (x - x0)**2)
     phase = np.exp(-1j * k0 * x)
+    # Si width=None, reproduce literalmente exp(-2*(x-x0)^2)
     if width is None:
         env = np.exp(-2.0 * (x - x0)**2)
     return env * phase
@@ -149,17 +138,18 @@ def gaussian_packet(x, x0=10.0, k0=2.0, width=0.5):
 def main():
     # Parámetros espaciales
     x_min, x_max = -20.0,  20.0
-    N = 2048                     # malla fina
+    N = 2048                     # malla fina mantiene buena dispersión y estabilidad visual
     x = np.linspace(x_min, x_max, N, endpoint=False)  # periódico para SSFM
 
-    alpha = 0.1         
+    alpha = 0.1                  # según taller
+
     # Condición inicial (t=0): psi(0,x) = exp(-2(x-10)^2) * exp(-i 2 x)
     psi0 = gaussian_packet(x, x0=10.0, k0=2.0, width=None)  # width=None => literal del enunciado
 
     # Potenciales
     V_harm = - (x**2) / 50.0
-    V_quart = (x / 5.0)**4          
-    V_hat  = (1.0/50.0) * ((x*4)/100.0 - x*2)
+    V_quart = (x / 5.0)**4          # interpretación estándar del "cuártico"
+    V_hat  = (1.0/50.0) * ((x**4)/100.0 - x**2)
 
     # ----- 1.a: Oscilador armónico -----
     split_step_schrodinger(
@@ -184,14 +174,14 @@ def main():
         Vx=V_quart,
         x=x,
         alpha=alpha,
-        tmax=50.0,       
+        tmax=50.0,          # según enunciado
         dt=0.02,
         frames_target=450,
         fps=30,
         video_name="1.b.mp4",
         title="1.b — Oscilador cuártico",
-        compute_moments=False,
-        pdf_name=None,
+        compute_moments=True,
+        pdf_name="1.b.pdf",
         potential_overlay=True,
     )
 
@@ -201,7 +191,7 @@ def main():
         Vx=V_hat,
         x=x,
         alpha=alpha,
-        tmax=150.0,        
+        tmax=150.0,        # "repita la simulación" — usamos mismo horizonte que 1.a
         dt=0.02,
         frames_target=600,
         fps=30,
@@ -213,4 +203,5 @@ def main():
     )
 
 
-main()
+if __name__ == "__main__":
+    main()
