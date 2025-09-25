@@ -159,7 +159,7 @@ def main():
     # Potenciales
     V_harm = - (x**2) / 50.0
     V_quart = (x / 5.0)**4          
-    V_hat  = (1.0/50.0) * ((x*4)/100.0 - x*2)
+    V_hat  = (1.0/50.0) * ((x*4)/100.0 - x**2)
 
     # ----- 1.a: Oscilador armónico -----
     split_step_schrodinger(
