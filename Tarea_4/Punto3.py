@@ -23,26 +23,20 @@ SAVE_DIR.mkdir(parents=True, exist_ok=True)
 def SAVE(name: str) -> str:
     return str(SAVE_DIR / name)
 
-# ----------------------
-# Utilidades
-# ----------------------
+
 def sech(x):
     return 1.0 / np.cosh(x)
 
-# ----------------------
-# Parámetros de simulación (preset tren de solitones)
-# ----------------------
-propagate_right = True  # True -> derecha ; False -> izquierda
-delta = 0.06            # menos dispersión -> tren más nítido
+propagate_right = True  
+delta = 0.06           
 Lx    = 40.0
-N     = 1024            # más resolución espacial
+N     = 1024           
 T     = 80.0
 dt    = 0.01
 
 x  = np.linspace(-Lx/2, Lx/2, N, endpoint=False)
 dx = x[1] - x[0]
 
-# Condición inicial
 init_condition = 'gaussean'   # 'cosine' o 'sech'
 if init_condition == 'gaussean':
     A0 = 2.0
@@ -57,16 +51,14 @@ v  = np.fft.fft(phi0)
 k  = 2.0 * np.pi * np.fft.fftfreq(N, d=Lx/N)
 ik = 1j * k
 
-# Operador lineal L = ± i δ^2 k^3  (signo elige dirección)
+# Operador lineal L = ± i δ^2 k^3  
 L = ((-1j if propagate_right else 1j) * (k**3)) * (delta**2)
 
-# ----------------------
-# Dealiasing 2/3 para el no lineal
-# ----------------------
+
 kmax    = np.max(np.abs(k))
 dealias = (np.abs(k) <= (2.0/3.0)*kmax)
 
-# No lineal: N̂ = -0.5 i k * FFT(φ^2), con dealiasing
+
 g = -0.5j * k
 def Nhat(vhat):
     phi = np.fft.ifft(vhat).real
@@ -80,7 +72,7 @@ def Nhat(vhat):
 E  = np.exp(dt * L)
 E2 = np.exp(dt * L / 2.0)
 M  = 64
-r  = np.exp(1j * np.pi * (np.arange(1, M+1) - 0.5) / M)  # semicírculo
+r  = np.exp(1j * np.pi * (np.arange(1, M+1) - 0.5) / M)  
 LR = dt * L[:, None] + r[None, :]
 
 Q  = dt * np.mean((np.exp(LR/2.0) - 1.0) / LR, axis=1)
@@ -89,9 +81,7 @@ f1 = dt * np.mean((-4.0 - LR + np.exp(LR)*(4.0 - 3.0*LR + LR**2)) / (LR**3), axi
 f2 = dt * np.mean(( 2.0 + LR + np.exp(LR)*(-2.0 + LR)) / (LR**3), axis=1)
 f3 = dt * np.mean((-4.0 - 3.0*LR - LR**2 + np.exp(LR)*(4.0 - LR)) / (LR**3), axis=1)
 
-# ----------------------
-# Históricos
-# ----------------------
+
 phi   = np.fft.ifft(v).real
 phi_x = np.fft.ifft(ik * v).real
 

@@ -80,22 +80,19 @@ plt.show()
 
 def calculate_SN_freq(amplitud_espectro, freq, freqs, window_size=5):
    
-    # Encontrar el índice del pico principal 
     idx_peak = np.argmin(np.abs(freqs - freq))
     
     # Altura del pico principal
     peak_height = amplitud_espectro[idx_peak]
     
-    # Crear máscara para excluir el pico principal y sus alrededores
+   
     startt = max(0, idx_peak - window_size)
     endd   = min(len(freqs), idx_peak + window_size + 1)
     
-    # Calcular desviación estándar del fondo (parte sin picos)
     background = np.delete(amplitud_espectro, np.arange(startt, endd))
     
     background_std = np.std(background)
     
-    # Evitar división por cero
     if background_std == 0:
         return peak_height, 0
     
@@ -105,7 +102,7 @@ def calculate_SN_freq(amplitud_espectro, freq, freqs, window_size=5):
 
 
 
-# Generar valores de SN_time (logarítmicamente distribuídos de 0.01 a 1.0)
+# Generar valores de SN_time 00.1 y 0.1
 num_datasets = 100 
 SN_time_values = np.logspace(-2, 0, num_datasets)  # 0.01 a 1.0  #np.logspace(a, b, N) -> genera N valores igualmente espaciados en escala logarítmica, desde 10**𝑎 ahasta 10**b.
 #Entonces SN_time_values es un array con 100 valorees entre 0.01 y 1.0, pero distribuidos logarítmicamente
@@ -115,25 +112,24 @@ SN_freq_values = []
 background_std_values = []
 
 
-# Generar muchos conjuntos de datos y calcular SN_freq para cada uno
 for SN_time in SN_time_values:
-    # Calcular A a partir de SN_time (SN_time = A/noise)
+    
     A = SN_time * noise
     
-    # Generar datos
+  
     t, y = generate_data(tmax, dt, A, freq, noise)
     
-    # Calcular transformada de Fourier
+   
     F = Fourier_transform(t, y, freqs)
     amplitud_espectro = np.abs(F)
     
-    # Calcular SN_freq
+   
     SN_freq, background_std = calculate_SN_freq(amplitud_espectro, freq, freqs)
     
     SN_freq_values.append(SN_freq)
     background_std_values.append(background_std)
 
-# Graficar SN_freq vs SN_time en escala log-log
+
 plt.figure(figsize=(10, 6))
 plt.loglog(SN_time_values, SN_freq_values, 'bo-', alpha=0.7, markersize=4)
 plt.xlabel('SN_time', fontsize=12)
@@ -143,7 +139,6 @@ plt.grid(True, alpha=0.3, which='both')
 
 
 
-# Ajustar modelo lineal en log-log (potencia)
 log_SN_time = np.log10(SN_time_values)
 log_SN_freq = np.log10(SN_freq_values)   #log(SNfreq​)=m⋅log(SNtime​)+b
 
