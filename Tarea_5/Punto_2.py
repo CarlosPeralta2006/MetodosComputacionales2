@@ -21,7 +21,6 @@ def deriv(t, y):
         lambda_Np * Np - B * Pu
     ]
 
-# Definir evento para detectar estado estable (derivadas pequeñas)
 def evento_deriv_peq(t, y):
     dU, dNp, dPu = deriv(t, y)
     max_deriv = max(abs(dU), abs(dNp), abs(dPu))
@@ -53,7 +52,7 @@ axes[2].plot(t, Pu_sol, color='r')
 axes[2].set_ylabel('Pu-239 (unidades)')
 axes[2].set_xlabel('Tiempo (días)')
 axes[2].grid(True, linestyle=':')
-# Marcar momento de equilibrio alcanzado (línea vertical punteada)
+
 if t_estable is not None and t_estable <= 30:
     for ax in axes:
         ax.axvline(t_estable, color='k', linestyle='--', alpha=0.7)
@@ -146,7 +145,6 @@ for j in range(N_traj):
         Np_traj[j, i+1] = Np
         Pu_traj[j, i+1] = Pu
 
-# Calcular solución determinista para comparar
 from scipy.integrate import solve_ivp
 sol_det = solve_ivp(
     lambda t,y: [
@@ -205,7 +203,7 @@ lambda_Np = np.log(2) / t_half_Np
 
 np.random.seed(1)  # semilla para reproducibilidad
 
-# Función para simular una trayectoria con algoritmo de Gillespie
+
 def sim_gillespie():
     U, Np, Pu = 10, 10, 10
     t = 0.0
@@ -248,7 +246,7 @@ def sim_gillespie():
         U_list.append(U); Np_list.append(Np); Pu_list.append(Pu)
     return np.array(t_list), np.array(U_list), np.array(Np_list), np.array(Pu_list)
 
-# Generar 5 trayectorias independientes
+
 traj_times = []
 traj_U = []
 traj_Np = []
@@ -302,7 +300,7 @@ import numpy as np
 from math import sqrt
 from numba import njit
 
-# Parámetros y constantes del modelo
+
 A = 1000.0
 B = 20.0
 t_half_U = 23.4 / (60.0*24.0)   # 23.4 min en días

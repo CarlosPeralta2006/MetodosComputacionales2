@@ -2,28 +2,154 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
+# 1a - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
-# Parámetros y estado inicial (1a)
+# parámetros del problema 
 N      = 64            # tamaño de la red (N x N)
 J      = 1.0
-beta   = 0.50          # beta fijo para 1a (relajación/tiempos)
+beta   = 0.50 
 seed   = 12345
+
+# construcción del ambiente
+
+rng = np.random.default_rng(seed)
+sigma = rng.choice((-1, +1), size=(N, N), replace=True).astype(np.int8)
+
+
+# funciones utilitarias 
+
+# s: spin i,j
+
+def _sum_vecinos(i, j, s):
+    N = s.shape[0]
+    up    = s[(i - 1) % N, j]
+    down  = s[(i + 1) % N, j]
+    left  = s[i, (j - 1) % N]
+    right = s[i, (j + 1) % N]
+    return up + down + left + right
+
+def delta_E_flip(i, j, s, J=1.0):
+    return 2.0 * J * s[i, j] * _sum_vecinos(i, j, s)
+
+def energia_total(s, J=1.0):
+    
+    N = s.shape[0]
+    right = np.roll(s, shift=-1, axis=1)
+    down  = np.roll(s, shift=-1, axis=0)
+    H = -J * np.sum(s * right + s * down)
+    return H
+
+def magnetizacion_total(s):
+    return int(np.sum(s))
+
+
+def energia_por_espin_taller(H, N):
+    return H / (4.0 * (N * N))
+
+def magnetizacion_por_espin(S, N):
+    return S / float(N * N)
+
+
+
+
+# preparación MCMC
+
+burn_in_mcss   = 200  
+sample_mcss    = 400   
+thin_mcss      = 1   
+
+# 1 MCSS ~ N^2 propuestas de flip en promedio
+n_proposals_per_mcss = N * N
+
+H_current = energia_total(sigma, J=J)
+S_current = magnetizacion_total(sigma)
+
+def metropolis_mcss(s, beta, H_current, S_current, rng):
+    
+    N = s.shape[0]
+    for _ in range(N * N):
+        i = rng.integers(0, N)
+        j = rng.integers(0, N)
+
+        dE = delta_E_flip(i, j, s, J=J)
+        if dE <= 0.0:  # acepta siemre 
+            s[i, j] = -s[i, j]
+            H_current += dE
+            S_current += -2 * s[i, j]  
+        else:  # acepta con prob e^{-beta dE}
+            if rng.random() < np.exp(-beta * dE):
+                s[i, j] = -s[i, j]
+                H_current += dE
+                S_current += -2 * s[i, j]
+    return s, H_current, S_current
+
+
+
+
+# ejecución 
+
+t_list = []
+e_list = []
+m_list = []
+
+# estado inicial (t=0)
+t = 0
+t_list.append(t)
+e_list.append(energia_por_espin_taller(H_current, N))
+m_list.append(magnetizacion_por_espin(S_current, N))
+
+# burn-in
+for _ in range(burn_in_mcss):
+    sigma, H_current, S_current = metropolis_mcss(sigma, beta, H_current, S_current, rng)
+    t += 1
+    t_list.append(t)
+    e_list.append(energia_por_espin_taller(H_current, N))
+    m_list.append(magnetizacion_por_espin(S_current, N))
+
+# muestreo (con thinning)
+saved = 0
+while saved < sample_mcss:
+    sigma, H_current, S_current = metropolis_mcss(sigma, beta, H_current, S_current, rng)
+    t += 1
+    if (saved % thin_mcss) == 0:
+        t_list.append(t)
+        e_list.append(energia_por_espin_taller(H_current, N))
+        m_list.append(magnetizacion_por_espin(S_current, N))
+    saved += 1
+
+from matplotlib.backends.backend_pdf import PdfPages
+
+with PdfPages('1.a.pdf') as pdf:
+    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+
+    # Energía (negro) y magnetización (azul)
+    ax.plot(t_list, e_list, color='k', lw=1, label=r'$e(t)=H/(4N^2)$')
+    ax.plot(t_list, m_list, color='b', lw=1, label=r'$m(t)=\frac{1}{N^2}\sum \sigma$')
+
+    ax.set_xlabel('t (MCSS)')
+    ax.set_ylabel('Observables normalizados')
+    ax.set_title(fr'Ising 2D (N={N}, J=1, $\beta={beta}$) — Relajación y muestreo')
+    ax.legend()
+
+    fig.tight_layout()
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+
+
+
+# 1b - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
 rng   = np.random.default_rng(seed)
 sigma = rng.choice((-1, +1), size=(N, N), replace=True).astype(np.int8)
 
-# Utilidades comunes
 def energia_total(s, J=1.0):
-    """
-    Energía de Ising con enlaces contados una sola vez (right+down),
-    O(N^2). Solo la usamos al inicio, luego actualizamos incrementalmente.
-    """
     right = np.roll(s, -1, axis=1)
     down  = np.roll(s, -1, axis=0)
     return -J * np.sum(s * right + s * down)
 
 def neighbor_sum(s):
-    """Suma de 4 vecinos con BC periódicas (vectorizado)."""
     return (np.roll(s,  1, 0) + np.roll(s, -1, 0) +
             np.roll(s,  1, 1) + np.roll(s, -1, 1))
 
@@ -36,72 +162,9 @@ def make_checker_masks(N):
 
 black_mask, white_mask = make_checker_masks(N)
 
-def magnetizacion_total(s):
-    return int(np.sum(s))
-
-def energia_por_espin_taller(H, N):
-    """Normalización pedida por el taller: H / (4 N^2)."""
-    return H / (4.0 * (N * N))
-
-def magnetizacion_por_espin(S, N):
-    return S / float(N * N)
-
-
-# Metropolis vectorizado (checkerboard)
-def metropolis_checkerboard_mcss(s, beta, H_current, S_current, rng, J=1.0):
-    """
-    Un MCSS con dos medias barridas: primero subred negra, luego blanca.
-    - Vectorizado: calcula ΔE para todos los sitios de la subred a la vez.
-    - Actualiza energía (H_current) y magnetización (S_current) INCREMENTALmente.
-    """
-    # ---- subred negra ----
-    nsum  = neighbor_sum(s)
-    mask  = black_mask
-    sold  = s[mask].copy()                 # espines viejos solo de la subred
-    dE_m  = (2.0 * J * s * nsum)[mask]     # ΔE por sitio en la subred
-
-    accept = (dE_m <= 0.0)                 # regla Metropolis
-    pos    = ~accept
-    if pos.any():
-        u = rng.random(pos.sum())
-        accept[pos] = (u < np.exp(-beta * dE_m[pos]))
-
-    s_m = sold
-    s_m[accept] = -s_m[accept]
-    s[mask] = s_m
-
-    if accept.any():
-        H_current += dE_m[accept].sum()
-        # ΔS para un flip es -2*s_old por sitio aceptado
-        S_current += (-2 * sold[accept]).sum()
-
-    # ---- subred blanca ----
-    nsum  = neighbor_sum(s)                 # vecinos cambiaron tras la subred negra
-    mask  = white_mask
-    sold  = s[mask].copy()
-    dE_m  = (2.0 * J * s * nsum)[mask]
-
-    accept = (dE_m <= 0.0)
-    pos    = ~accept
-    if pos.any():
-        u = rng.random(pos.sum())
-        accept[pos] = (u < np.exp(-beta * dE_m[pos]))
-
-    s_m = sold
-    s_m[accept] = -s_m[accept]
-    s[mask] = s_m
-
-    if accept.any():
-        H_current += dE_m[accept].sum()
-        S_current += (-2 * sold[accept]).sum()
-
-    return s, H_current, S_current
 
 def metropolis_checkerboard_mcss_energy_only(s, beta, H_current, rng, J=1.0):
-    """
-    Igual que la anterior pero SIN rastrear magnetización (más ligera).
-    La usamos en 1b para medir C_v a partir de fluctuaciones de H.
-    """
+
     # subred negra
     nsum  = neighbor_sum(s)
     mask  = black_mask
@@ -140,57 +203,6 @@ def metropolis_checkerboard_mcss_energy_only(s, beta, H_current, rng, J=1.0):
 
     return s, H_current
 
-
-# 1a — Relajación y muestreo a beta fijo (vectorizado)
-burn_in_mcss = 200
-sample_mcss  = 400
-thin_mcss    = 1
-
-# Estado inicial para 1a
-H_current = energia_total(sigma, J=J)       # O(N^2) solo aquí
-S_current = magnetizacion_total(sigma)
-
-t_list, e_list, m_list = [], [], []
-t_list.append(0)
-e_list.append(energia_por_espin_taller(H_current, N))
-m_list.append(magnetizacion_por_espin(S_current, N))
-
-# Burn-in
-t = 0
-for _ in range(burn_in_mcss):
-    sigma, H_current, S_current = metropolis_checkerboard_mcss(
-        sigma, beta, H_current, S_current, rng, J=J
-    )
-    t += 1
-    t_list.append(t)
-    e_list.append(energia_por_espin_taller(H_current, N))
-    m_list.append(magnetizacion_por_espin(S_current, N))
-
-# Muestreo
-saved = 0
-while saved < sample_mcss:
-    sigma, H_current, S_current = metropolis_checkerboard_mcss(
-        sigma, beta, H_current, S_current, rng, J=J
-    )
-    t += 1
-    if (saved % thin_mcss) == 0:
-        t_list.append(t)
-        e_list.append(energia_por_espin_taller(H_current, N))
-        m_list.append(magnetizacion_por_espin(S_current, N))
-    saved += 1
-
-with PdfPages('1.a.pdf') as pdf:
-    fig, ax = plt.subplots(figsize=(7.5, 5.0))
-    ax.plot(t_list, e_list, color='k', lw=1, label=r'$e(t)=H/(4N^2)$')
-    ax.plot(t_list, m_list, color='b', lw=1, label=r'$m(t)=\frac{1}{N^2}\sum \sigma$')
-    ax.set_xlabel('t (MCSS)')
-    ax.set_ylabel('Observables normalizados')
-    ax.set_title(fr'Ising 2D (N={N}, J=1, $\beta={beta}$) — Relajación y muestreo')
-    ax.legend()
-    fig.tight_layout(); pdf.savefig(fig); plt.close(fig)
-
-
-# 1b — Annealing con equilibrio adaptativo en el primer β
 
 # Mallado de betas: grueso + fino (zoom en [0.35, 0.55] con paso 0.01)
 betas_coarse = np.linspace(0.05, 1.00, 20)
