@@ -43,8 +43,8 @@ x  = np.linspace(-Lx/2, Lx/2, N, endpoint=False)
 dx = x[1] - x[0]
 
 # Condición inicial
-init_condition = 'cosine'   # 'cosine' o 'sech'
-if init_condition == 'cosine':
+init_condition = 'gaussean'   # 'cosine' o 'sech'
+if init_condition == 'gaussean':
     A0 = 2.0
     phi0 = A0 * np.cos(2.0 * np.pi * x / Lx)
 else:
