@@ -80,7 +80,7 @@ def simulate_reaction_diffusion(
 
     return u, v, dt, nsteps
 
-# Escenario 1: Gray–Scott
+# Escenario 1: Gray–Scott (Guepardo)
 
 def run_gray_scott():
     # u_t = Du ∇²u - u v^2 + f (1 - u)
@@ -116,7 +116,7 @@ def run_gray_scott():
     save_field_image(u, "2_manchas_gray_scott.png", title="Patrón tipo 'manchas' (Gray–Scott)", caption=caption)
 
 
-# Escenario 2: Schnakenberg
+# Escenario 2: Schnakenberg (Jirafa)
 
 def run_schnakenberg():
     # u_t = Du ∇²u + a - u + u^2 v
@@ -150,7 +150,7 @@ def run_schnakenberg():
     save_field_image(u, "2_puntos_schnakenberg.png",title="Patrón tipo 'puntos' (Schnakenberg)", caption=caption)
 
 
-# Escenario 3: Brusselator (ondas/oscilaciones)
+# Escenario 3: Brusselator (ondas/oscilaciones)(Oscilador Quimico)
 
 def run_brusselator():
     # u_t = Du ∇²u + A - (B+1)u + u^2 v
@@ -182,7 +182,7 @@ def run_brusselator():
     save_field_image(u, "2_ondas_brusselator.png",title="Patrón tipo 'ondas' (Brusselator)", caption=caption)
 
 
-# Escenario 4: FitzHugh–Nagumo (activador–inhibidor)
+# Escenario 4: FitzHugh–Nagumo (activador–inhibidor)(Propagacion potencial de accion en neuronas)
 
 def run_fitzhugh_nagumo():
     # u_t = Du ∇²u + (u - u^3/3 - v + I)
