@@ -1,0 +1,4 @@
+Determinista: 0.0% ± 0.0%
+RK estocástico: 17.0% ± 1.2%
+Gillespie: 17.1% ± 1.2%
+En el modelo determinista no se alcanza el umbral crítico, pero en las simulaciones estocásticas aproximadamente 17.0% ± 1.2% de las trayectorias alcanzan 80 unidades de Pu. Esto evidencia que las fluctuaciones aleatorias permiten exceder el nivel crítico con una probabilidad significativa, a pesar de que el modelo determinista predice cero riesgo.
