@@ -136,6 +136,6 @@ x, dx, k = crear_malla()
 print(f"Malla creada: {N} puntos, dx = {dx:.4f}")
 
 # Ejecutar simulaciones
-simular_potencial(V_armonico, "armonico", **configuraciones['armonico'])
-simular_potencial(V_cuartico, "cuartico", **configuraciones['cuartico'])
-simular_potencial(V_sombrero, "sombrero", **configuraciones['sombrero'])
+simular_potencial(V_armonico, "a-armonico", **configuraciones['armonico'])
+simular_potencial(V_cuartico, "b-cuartico", **configuraciones['cuartico'])
+simular_potencial(V_sombrero, "c-sombrero", **configuraciones['sombrero'])
