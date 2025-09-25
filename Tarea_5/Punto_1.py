@@ -1,307 +1,202 @@
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")  # backend sin pantalla
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.animation import FFMpegWriter
+from numpy.fft import fft, ifft, fftfreq
 
-# 1a - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+# Utilidades numéricas
 
-# parámetros del problema 
-N      = 64            # tamaño de la red (N x N)
-J      = 1.0
-beta   = 0.50 
-seed   = 12345
+def split_step_schrodinger(psi0, Vx, x, alpha=0.1, tmax=150.0, dt=0.02, frames_target=600,
+                            fps=30, video_name="video.mp4", title="",
+                            compute_moments=False, pdf_name=None,
+                            potential_overlay=True):
+    N = x.size
+    L = x[-1] - x[0]
+    dx = x[1] - x[0]
 
-# construcción del ambiente
+    # Malla de momentos k (periodicidad del SSFM)
+    k = 2.0 * np.pi * fftfreq(N, d=dx)
 
-rng = np.random.default_rng(seed)
-sigma = rng.choice((-1, +1), size=(N, N), replace=True).astype(np.int8)
+    # Operadores de propagación (Strang splitting):
+    # medio paso en V, paso completo en T
+    expV_half = np.exp(-1j * Vx * dt / 2.0)
+    expT_full = np.exp( 1j * alpha * (k**2) * dt )
 
+    # Preparación de video
+    fig, ax = plt.subplots(figsize=(7.2, 4.0))
+    line_prob, = ax.plot([], [], lw=1.8, label=r"$|\psi|^2$")
+    if potential_overlay:
+        # Reescala V(x) para visualizarlo en la misma figura que |psi|^2
+        Vmin, Vmax = np.min(Vx), np.max(Vx)
+        Vscaled = (Vx - Vmin) / (Vmax - Vmin + 1e-12)
+        pot_plot, = ax.plot(x, Vscaled, lw=1.0, ls='--', label="V(x) (escala 0–1)")
+    else:
+        pot_plot = None
 
-# funciones utilitarias 
+    ax.set_xlim(x[0], x[-1])
+    ax.set_ylim(0.0, 1.2)
+    ax.set_xlabel("x")
+    ax.set_ylabel(r"Densidad de probabilidad $|\psi|^2$")
+    ax.set_title(title)
+    ax.grid(True, alpha=0.25)
+    ax.legend(loc="upper right")
 
-# s: spin i,j
+    writer = FFMpegWriter(fps=fps, metadata={"title": title, "artist": "MC2 Taller 4"})
 
-def _sum_vecinos(i, j, s):
-    N = s.shape[0]
-    up    = s[(i - 1) % N, j]
-    down  = s[(i + 1) % N, j]
-    left  = s[i, (j - 1) % N]
-    right = s[i, (j + 1) % N]
-    return up + down + left + right
+    # Número de pasos y stride para aproximar frames_target
+    n_steps = int(np.round(tmax / dt))
+    stride = max(1, n_steps // max(1, frames_target))
 
-def delta_E_flip(i, j, s, J=1.0):
-    return 2.0 * J * s[i, j] * _sum_vecinos(i, j, s)
+    # Normalización (con trapecio)
+    def normalize(psi):
+        prob = np.trapz(np.abs(psi)**2, x)
+        return psi / np.sqrt(prob)
 
-def energia_total(s, J=1.0):
-    
-    N = s.shape[0]
-    right = np.roll(s, shift=-1, axis=1)
-    down  = np.roll(s, shift=-1, axis=0)
-    H = -J * np.sum(s * right + s * down)
-    return H
+    # Momentos
+    times = []
+    mus = []
+    sigmas = []
 
-def magnetizacion_total(s):
-    return int(np.sum(s))
+    psi = normalize(psi0.astype(np.complex128))
 
+    with writer.saving(fig, video_name, dpi=140):
+        for n in range(n_steps + 1):
+            t = n * dt
 
-def energia_por_espin_taller(H, N):
-    return H / (4.0 * (N * N))
+            # Guardar frame cada 'stride'
+            if n % stride == 0:
+                prob_density = np.abs(psi)**2
+                line_prob.set_data(x, prob_density)
+                ax.set_ylim(0.0, max(1e-6, prob_density.max()) * 1.15)
+                writer.grab_frame()
 
-def magnetizacion_por_espin(S, N):
-    return S / float(N * N)
+                if compute_moments:
+                    # <x>
+                    mu = np.trapz(x * prob_density, x)
+                    # <(x-mu)^2>
+                    sigma2 = np.trapz((x - mu)**2 * prob_density, x)
+                    times.append(t)
+                    mus.append(mu)
+                    sigmas.append(np.sqrt(max(0.0, sigma2)))
 
+            if n == n_steps:
+                break
 
+            # Paso SSFM: V/2 -> T -> V/2
+            psi = expV_half * psi
+            psi_k = fft(psi)
+            psi_k *= expT_full
+            psi = ifft(psi_k)
+            psi = expV_half * psi
 
+            # Renormalizar (robustez numérica)
+            psi = normalize(psi)
 
-# preparación MCMC
-
-burn_in_mcss   = 200  
-sample_mcss    = 400   
-thin_mcss      = 1   
-
-# 1 MCSS ~ N^2 propuestas de flip en promedio
-n_proposals_per_mcss = N * N
-
-H_current = energia_total(sigma, J=J)
-S_current = magnetizacion_total(sigma)
-
-def metropolis_mcss(s, beta, H_current, S_current, rng):
-    
-    N = s.shape[0]
-    for _ in range(N * N):
-        i = rng.integers(0, N)
-        j = rng.integers(0, N)
-
-        dE = delta_E_flip(i, j, s, J=J)
-        if dE <= 0.0:  # acepta siemre 
-            s[i, j] = -s[i, j]
-            H_current += dE
-            S_current += -2 * s[i, j]  
-        else:  # acepta con prob e^{-beta dE}
-            if rng.random() < np.exp(-beta * dE):
-                s[i, j] = -s[i, j]
-                H_current += dE
-                S_current += -2 * s[i, j]
-    return s, H_current, S_current
-
-
-
-
-# ejecución 
-
-t_list = []
-e_list = []
-m_list = []
-
-# estado inicial (t=0)
-t = 0
-t_list.append(t)
-e_list.append(energia_por_espin_taller(H_current, N))
-m_list.append(magnetizacion_por_espin(S_current, N))
-
-# burn-in
-for _ in range(burn_in_mcss):
-    sigma, H_current, S_current = metropolis_mcss(sigma, beta, H_current, S_current, rng)
-    t += 1
-    t_list.append(t)
-    e_list.append(energia_por_espin_taller(H_current, N))
-    m_list.append(magnetizacion_por_espin(S_current, N))
-
-# muestreo (con thinning)
-saved = 0
-while saved < sample_mcss:
-    sigma, H_current, S_current = metropolis_mcss(sigma, beta, H_current, S_current, rng)
-    t += 1
-    if (saved % thin_mcss) == 0:
-        t_list.append(t)
-        e_list.append(energia_por_espin_taller(H_current, N))
-        m_list.append(magnetizacion_por_espin(S_current, N))
-    saved += 1
-
-from matplotlib.backends.backend_pdf import PdfPages
-
-with PdfPages('1.a.pdf') as pdf:
-    fig, ax = plt.subplots(figsize=(7.5, 5.0))
-
-    # Energía (negro) y magnetización (azul)
-    ax.plot(t_list, e_list, color='k', lw=1, label=r'$e(t)=H/(4N^2)$')
-    ax.plot(t_list, m_list, color='b', lw=1, label=r'$m(t)=\frac{1}{N^2}\sum \sigma$')
-
-    ax.set_xlabel('t (MCSS)')
-    ax.set_ylabel('Observables normalizados')
-    ax.set_title(fr'Ising 2D (N={N}, J=1, $\beta={beta}$) — Relajación y muestreo')
-    ax.legend()
-
-    fig.tight_layout()
-    pdf.savefig(fig)
     plt.close(fig)
 
+    if compute_moments and pdf_name is not None:
+        times = np.asarray(times)
+        mus = np.asarray(mus)
+        sigmas = np.asarray(sigmas)
+
+        fig2, ax2 = plt.subplots(figsize=(7.2, 3.8))
+        ax2.plot(times, mus, lw=2.0, label=r"$\mu(t)=\langle x \rangle$")
+        ax2.fill_between(times, mus - sigmas, mus + sigmas, alpha=0.25,
+                         label=r"$\mu \pm \sigma$")
+        ax2.set_xlabel("t")
+        ax2.set_ylabel("posición (x)")
+        ax2.grid(True, alpha=0.3)
+        ax2.legend(loc="upper right")
+        fig2.tight_layout()
+        fig2.savefig(pdf_name)
+        plt.close(fig2)
 
 
+# Condiciones del taller
 
-
-# 1b - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-
-rng   = np.random.default_rng(seed)
-sigma = rng.choice((-1, +1), size=(N, N), replace=True).astype(np.int8)
-
-def energia_total(s, J=1.0):
-    right = np.roll(s, -1, axis=1)
-    down  = np.roll(s, -1, axis=0)
-    return -J * np.sum(s * right + s * down)
-
-def neighbor_sum(s):
-    return (np.roll(s,  1, 0) + np.roll(s, -1, 0) +
-            np.roll(s,  1, 1) + np.roll(s, -1, 1))
-
-def make_checker_masks(N):
-    """Máscaras fija de subredes 'negra' y 'blanca' (patrón ajedrez)."""
-    ii, jj = np.ogrid[:N, :N]
-    black = ((ii + jj) & 1) == 0
-    white = ~black
-    return black, white
-
-black_mask, white_mask = make_checker_masks(N)
-
-
-def metropolis_checkerboard_mcss_energy_only(s, beta, H_current, rng, J=1.0):
-
-    # subred negra
-    nsum  = neighbor_sum(s)
-    mask  = black_mask
-    sold  = s[mask].copy()
-    dE_m  = (2.0 * J * s * nsum)[mask]
-
-    accept = (dE_m <= 0.0)
-    pos    = ~accept
-    if pos.any():
-        u = rng.random(pos.sum())
-        accept[pos] = (u < np.exp(-beta * dE_m[pos]))
-
-    s_m = sold
-    s_m[accept] = -s_m[accept]
-    s[mask] = s_m
-    if accept.any():
-        H_current += dE_m[accept].sum()
-
-    # subred blanca
-    nsum  = neighbor_sum(s)
-    mask  = white_mask
-    sold  = s[mask].copy()
-    dE_m  = (2.0 * J * s * nsum)[mask]
-
-    accept = (dE_m <= 0.0)
-    pos    = ~accept
-    if pos.any():
-        u = rng.random(pos.sum())
-        accept[pos] = (u < np.exp(-beta * dE_m[pos]))
-
-    s_m = sold
-    s_m[accept] = -s_m[accept]
-    s[mask] = s_m
-    if accept.any():
-        H_current += dE_m[accept].sum()
-
-    return s, H_current
-
-
-# Mallado de betas: grueso + fino (zoom en [0.35, 0.55] con paso 0.01)
-betas_coarse = np.linspace(0.05, 1.00, 20)
-betas_fine   = np.arange(0.35, 0.55 + 1e-12, 0.01)
-betas = np.unique(np.round(np.concatenate([betas_coarse, betas_fine]), 5))
-betas.sort()  # muy importante para hacer annealing de menor a mayor
-
-
-
-burn_in_mcss_fixed = 800   # burn-in corto heredado para betas posteriores
-sample_mcss  = 4000
-thin_mcss    = 10
-
-# Criterio de equilibrio (primer beta; activar para todos con adaptive_all_betas=True)
-eq_window     = 500    # MCSS por ventana
-eq_tol        = 7e-4     # cambio relativo permitido en <H>
-eq_max_mcss   = 50000
-adaptive_all_betas = False
-
-def burn_until_equilibrium(s, beta, H, rng, window=300, tol=1e-3, max_mcss=30000):
+def gaussian_packet(x, x0=10.0, k0=2.0, width=0.5):
+    """Paquete gaussiano: exp(-2*(x-x0)^2) * exp(-i k0 x) con ancho opcional.
+    Por compatibilidad con el enunciado, el estándar es width=0.5 => factor 2.
     """
-    Corre MCSS hasta que el cambio relativo de <H> entre dos ventanas consecutivas
-    sea < tol. Devuelve (s, H, mcss_usados).
-    """
-    H_hist = []
-    mcss   = 0
-    # llenar primera ventana
-    for _ in range(window):
-        s, H = metropolis_checkerboard_mcss_energy_only(s, beta, H, rng, J=J)
-        H_hist.append(H); mcss += 1
-    prev_mean = np.mean(H_hist[-window:])
-
-    while mcss < max_mcss:
-        for _ in range(window):
-            s, H = metropolis_checkerboard_mcss_energy_only(s, beta, H, rng, J=J)
-            H_hist.append(H); mcss += 1
-        curr_mean = np.mean(H_hist[-window:])
-        # cambio relativo con denominador seguro
-        denom = max(1.0, abs(prev_mean))
-        rel_change = abs(curr_mean - prev_mean) / denom
-        if rel_change < tol:
-            break
-        prev_mean = curr_mean
-    return s, H, mcss
-
-# Re-inicializamos estado para 1b como indica la pista (β≈0, aleatorio)
-sigma = rng.choice((-1, +1), size=(N, N), replace=True).astype(np.int8)
-H_current = energia_total(sigma, J=J)
-
-Cv_text            = []
-
-for idx, beta in enumerate(betas):
-    if idx == 0 or adaptive_all_betas:
-        # Equilibrio adaptativo para el primer beta (o para todos si se activa)
-        sigma, H_current, used = burn_until_equilibrium(
-            sigma, beta, H_current, rng,
-            window=eq_window, tol=eq_tol, max_mcss=eq_max_mcss
-        )
-    else:
-        # Burn-in corto heredado entre betas (annealing)
-        for _ in range(burn_in_mcss_fixed):
-            sigma, H_current = metropolis_checkerboard_mcss_energy_only(
-                sigma, beta, H_current, rng, J=J
-            )
-
-    # Muestreo con thinning (solo energía)
-    H_samples = []
-    saved = 0
-    steps = 0
-    while saved < sample_mcss:
-        sigma, H_current = metropolis_checkerboard_mcss_energy_only(
-            sigma, beta, H_current, rng, J=J
-        )
-        steps += 1
-        if (steps % thin_mcss) == 0:
-            H_samples.append(H_current)
-            saved += 1
-
-    H_samples = np.asarray(H_samples, dtype=float)
-    E_samples = H_samples / (4.0 * N * N)  # E = H/(4N^2) como en el texto
-    var_E     = E_samples.var(ddof=1) if E_samples.size > 1 else 0.0
-
-    # C_v del texto: C_v(beta) = beta^2 * N^2 * Var(E)
-    Cv_text.append( (beta**2) * (N * N) * var_E )
+    # Si width es la desviación estandar s, un gaussiano típico es exp(-(x-x0)^2/(2 s^2)).
+    # El enunciado usa exp(-2 (x-x0)^2); eso equivale a s = 1/2.
+    s = width
+    env = np.exp(- (x - x0)*2 / (2.0 * s2)) if width is not None else np.exp(-2.0 * (x - x0)*2)
+    phase = np.exp(-1j * k0 * x)
+    # Si width=None, reproduce literalmente exp(-2*(x-x0)^2)
+    if width is None:
+        env = np.exp(-2.0 * (x - x0)**2)
+    return env * phase
 
 
-Cv_text = np.asarray(Cv_text)
+def main():
+    # Parámetros espaciales
+    x_min, x_max = -20.0,  20.0
+    N = 2048                     # malla fina mantiene buena dispersión y estabilidad visual
+    x = np.linspace(x_min, x_max, N, endpoint=False)  # periódico para SSFM
+
+    alpha = 0.1                  # según taller
+
+    # Condición inicial (t=0): psi(0,x) = exp(-2(x-10)^2) * exp(-i 2 x)
+    psi0 = gaussian_packet(x, x0=10.0, k0=2.0, width=None)  # width=None => literal del enunciado
+
+    # Potenciales
+    V_harm = - (x**2) / 50.0
+    V_quart = (x / 5.0)**4          # interpretación estándar del "cuártico"
+    V_hat  = (1.0/50.0) * ((x*4)/100.0 - x*2)
+
+    # ----- 1.a: Oscilador armónico -----
+    split_step_schrodinger(
+        psi0=psi0,
+        Vx=V_harm,
+        x=x,
+        alpha=alpha,
+        tmax=150.0,
+        dt=0.02,
+        frames_target=600,
+        fps=30,
+        video_name="1.a.mp4",
+        title="1.a — Oscilador armónico",
+        compute_moments=True,
+        pdf_name="1.a.pdf",
+        potential_overlay=True,
+    )
+
+    # ----- 1.b: Oscilador cuártico (anarmónico) -----
+    split_step_schrodinger(
+        psi0=psi0,
+        Vx=V_quart,
+        x=x,
+        alpha=alpha,
+        tmax=50.0,          # según enunciado
+        dt=0.02,
+        frames_target=450,
+        fps=30,
+        video_name="1.b.mp4",
+        title="1.b — Oscilador cuártico",
+        compute_moments=False,
+        pdf_name=None,
+        potential_overlay=True,
+    )
+
+    # ----- 1.c: Potencial sombrero -----
+    split_step_schrodinger(
+        psi0=psi0,
+        Vx=V_hat,
+        x=x,
+        alpha=alpha,
+        tmax=150.0,        # "repita la simulación" — usamos mismo horizonte que 1.a
+        dt=0.02,
+        frames_target=600,
+        fps=30,
+        video_name="1.c.mp4",
+        title="1.c — Potencial sombrero",
+        compute_moments=True,
+        pdf_name="1.c.pdf",
+        potential_overlay=True,
+    )
 
 
-# Gráficas 1b
-
-beta_c = 0.5 * np.log(1.0 + np.sqrt(2.0))
-
-with PdfPages('1.b.pdf') as pdf:
-    # C_v del texto (beta^2 N^2 Var(E))
-    fig, ax = plt.subplots(figsize=(7.5, 5.0))
-    ax.plot(betas, Cv_text, lw=1.5, label=r'$C_v(\beta)=\beta^2 N^2\,\mathrm{Var}(E)$')
-    ax.axvline(beta_c, ls='--', lw=1.0, color='r',
-               label=fr'$\beta_c \approx {beta_c:.4f}$')
-    ax.set_xlabel(r'$\beta$'); ax.set_ylabel('Cv')
-    ax.set_title(fr'Ising 2D (N={N}, J=1) — $C_v$ vs $\beta$ (annealing)')
-    ax.legend(); fig.tight_layout(); pdf.savefig(fig); plt.close(fig)
+if _name_ == "_main_":
+    main()
