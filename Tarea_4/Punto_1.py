@@ -1,4 +1,5 @@
 
+
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")  # backend sin pantalla
@@ -9,9 +10,9 @@ from numpy.fft import fft, ifft, fftfreq
 from scipy.sparse import diags, identity, csc_matrix
 from scipy.sparse.linalg import splu
 
-# ============================
+
 # Utilidades numéricas
-# ============================
+
 
 def split_step_schrodinger(psi0, Vx, x, alpha=0.1, tmax=150.0, dt=None, frames_target=600,
                             fps=30, video_name="video.mp4", title="",
@@ -32,7 +33,6 @@ def split_step_schrodinger(psi0, Vx, x, alpha=0.1, tmax=150.0, dt=None, frames_t
     - title: título para la figura del video
     - compute_moments: si True, calcula mu(t) y sigma(t)
     - pdf_name: si se provee y compute_moments=True, exporta PDF con mu(t) ± sigma(t)
-    - potential_overlay: si True, dibuja V(x) reescalado en el video
     """
     N = x.size
     L = x[-1] - x[0]
@@ -146,9 +146,9 @@ def split_step_schrodinger(psi0, Vx, x, alpha=0.1, tmax=150.0, dt=None, frames_t
         plt.close(fig2)
 
 
-# ============================
+
 # Crank–Nicolson (FD) para 1.b y 1.c
-# ============================
+
 
 def _laplacian_periodic(N, dx):
     main = -2.0 * np.ones(N)
@@ -250,13 +250,12 @@ def crank_nicolson_fd(psi0, Vx, x, alpha=0.1, tmax=150.0, dt=None,
         fig2.tight_layout(); fig2.savefig(pdf_name); plt.close(fig2)
 
 
-# ============================
+
 # Condiciones del taller
-# ============================
+
 
 def gaussian_packet(x, x0=10.0, k0=2.0, width=0.5):
-    """Paquete gaussiano: exp(-2*(x-x0)^2) * exp(-i k0 x) con ancho opcional.
-    Por compatibilidad con el enunciado, el estándar es width=0.5 => factor 2.
+    """Paquete gaussiano: exp(-2*(x-x0)^2) * exp(-i k0 x) con width=0.5
     """
     # Si width es la desviación estandar s, un gaussiano típico es exp(-(x-x0)^2/(2 s^2)).
     # El enunciado usa exp(-2 (x-x0)^2); eso equivale a s = 1/2.
@@ -278,7 +277,7 @@ def main():
     alpha = 0.1                  # según taller
 
     # Condición inicial (t=0): psi(0,x) = exp(-2(x-10)^2) * exp(-i 2 x)
-    psi0 = gaussian_packet(x, x0=10.0, k0=2.0, width=None)  # width=None => literal del enunciado
+    psi0 = gaussian_packet(x, x0=10.0, k0=2.0, width=None)  # width=None 
 
     # Potenciales
     V_harm = - (x**2) / 50.0
