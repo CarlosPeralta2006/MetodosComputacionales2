@@ -1,8 +1,3 @@
-# Punto_1.py — MC2: Taller 4, Punto 1
-# Evolución temporal de la ecuación de Schrödinger 1D
-# Requisitos del taller: sin plt.show(), guardar videos .mp4 y gráficas PDF
-# Genera: 1.a.mp4, 1.a.pdf, 1.b.mp4, 1.c.mp4, 1.c.pdf
-# Autor: (rellenar)
 
 import numpy as np
 import matplotlib
