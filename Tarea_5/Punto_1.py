@@ -1,139 +1,194 @@
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
+# 1a - - - - - SOLO INICIAL Y FINAL - - - - - - - - - - - - - - - - - - - - - -
+import numpy as np 
+import matplotlib.pyplot as plt 
+from matplotlib.backends.backend_pdf import PdfPages 
+from matplotlib.colors import ListedColormap
+# 1a — Registrar E(t) y M(t) y graficar vs épocas (además de guardar solo antes/después)
 
-# 1a - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-
-# parámetros del problema 
-N      = 64            # tamaño de la red (N x N)
+# --- Parámetros (puedes conservar los tuyos) ---
+N      = 64
 J      = 1.0
-beta   = 0.50 
+beta   = 0.50
 seed   = 12345
+TOTAL_EPOCHS = 200_000
 
-# construcción del ambiente
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.colors import ListedColormap
+SPIN_CMAP = ListedColormap(["#1f77b4", "#d62728"])
 
 rng = np.random.default_rng(seed)
 sigma = rng.choice((-1, +1), size=(N, N), replace=True).astype(np.int8)
 
-
-# funciones utilitarias 
-
-# s: spin i,j
-
+# --- Utilidades ---
 def _sum_vecinos(i, j, s):
-    N = s.shape[0]
-    up    = s[(i - 1) % N, j]
-    down  = s[(i + 1) % N, j]
-    left  = s[i, (j - 1) % N]
-    right = s[i, (j + 1) % N]
+    Nloc = s.shape[0]
+    up    = s[(i - 1) % Nloc, j]
+    down  = s[(i + 1) % Nloc, j]
+    left  = s[i, (j - 1) % Nloc]
+    right = s[i, (j + 1) % Nloc]
     return up + down + left + right
 
 def delta_E_flip(i, j, s, J=1.0):
     return 2.0 * J * s[i, j] * _sum_vecinos(i, j, s)
 
 def energia_total(s, J=1.0):
-    
-    N = s.shape[0]
     right = np.roll(s, shift=-1, axis=1)
     down  = np.roll(s, shift=-1, axis=0)
-    H = -J * np.sum(s * right + s * down)
-    return H
-
-def magnetizacion_total(s):
-    return int(np.sum(s))
-
-
-def energia_por_espin_taller(H, N):
-    return H / (4.0 * (N * N))
-
-def magnetizacion_por_espin(S, N):
-    return S / float(N * N)
-
-
-
-
-# preparación MCMC
-
-burn_in_mcss   = 200  
-sample_mcss    = 400   
-thin_mcss      = 1   
-
-# 1 MCSS ~ N^2 propuestas de flip en promedio
-n_proposals_per_mcss = N * N
-
-H_current = energia_total(sigma, J=J)
-S_current = magnetizacion_total(sigma)
+    return -J * np.sum(s * right + s * down)
 
 def metropolis_mcss(s, beta, H_current, S_current, rng):
-    
-    N = s.shape[0]
-    for _ in range(N * N):
-        i = rng.integers(0, N)
-        j = rng.integers(0, N)
-
+    """Un MCSS ~ N^2 propuestas aleatorias."""
+    Nloc = s.shape[0]
+    for _ in range(Nloc * 2):
+        i = rng.integers(0, Nloc)
+        j = rng.integers(0, Nloc)
         dE = delta_E_flip(i, j, s, J=J)
-        if dE <= 0.0:  # acepta siemre 
+        if dE <= 0.0:
+            s_old = s[i, j]
             s[i, j] = -s[i, j]
             H_current += dE
-            S_current += -2 * s[i, j]  
-        else:  # acepta con prob e^{-beta dE}
+            S_current += -2 * s_old
+        else:
             if rng.random() < np.exp(-beta * dE):
+                s_old = s[i, j]
                 s[i, j] = -s[i, j]
                 H_current += dE
-                S_current += -2 * s[i, j]
+                S_current += -2 * s_old
     return s, H_current, S_current
 
+# --- Inicialización ---
+H_current = energia_total(sigma, J=J)
+S_current = int(np.sum(sigma))
 
+# Guardamos estado inicial (para la figura de "antes")
+sigma_before = sigma.copy()
 
+# --- Buffers para series temporales (t = 0 ... TOTAL_EPOCHS) ---
+E_series  = np.empty(TOTAL_EPOCHS + 1, dtype=float)  # energía por espín
+M_series  = np.empty(TOTAL_EPOCHS + 1, dtype=float)  # magnetización por espín
+E_series[0] = H_current / (N * N)
+M_series[0] = S_current / (N * N)
 
-# ejecución 
-
-t_list = []
-e_list = []
-m_list = []
-
-# estado inicial (t=0)
-t = 0
-t_list.append(t)
-e_list.append(energia_por_espin_taller(H_current, N))
-m_list.append(magnetizacion_por_espin(S_current, N))
-
-# burn-in
-for _ in range(burn_in_mcss):
+# --- Evolución registrando E(t) y M(t) ---
+for t in range(1, TOTAL_EPOCHS + 1):
     sigma, H_current, S_current = metropolis_mcss(sigma, beta, H_current, S_current, rng)
-    t += 1
-    t_list.append(t)
-    e_list.append(energia_por_espin_taller(H_current, N))
-    m_list.append(magnetizacion_por_espin(S_current, N))
+    E_series[t] = H_current / (N * N)
+    M_series[t] = S_current / (N * N)
 
-# muestreo (con thinning)
-saved = 0
-while saved < sample_mcss:
-    sigma, H_current, S_current = metropolis_mcss(sigma, beta, H_current, S_current, rng)
-    t += 1
-    if (saved % thin_mcss) == 0:
-        t_list.append(t)
-        e_list.append(energia_por_espin_taller(H_current, N))
-        m_list.append(magnetizacion_por_espin(S_current, N))
-    saved += 1
+# Guardamos estado final (para la figura de "después")
+sigma_after = sigma.copy()
+
+# --- PDF con: (1) Antes, (2) E & M vs épocas, (3) Después ---
+# 1a — Registrar E(t) y M(t) y graficar vs épocas (además de guardar solo antes/después)
+
+# --- Parámetros (puedes conservar los tuyos) ---
+N      = 64
+J      = 1.0
+beta   = 0.50
+seed   = 12345
+TOTAL_EPOCHS = 200_000
 
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.colors import ListedColormap
+SPIN_CMAP = ListedColormap(["#1f77b4", "#d62728"])
 
+rng = np.random.default_rng(seed)
+sigma = rng.choice((-1, +1), size=(N, N), replace=True).astype(np.int8)
+
+# --- Utilidades ---
+def _sum_vecinos(i, j, s):
+    Nloc = s.shape[0]
+    up    = s[(i - 1) % Nloc, j]
+    down  = s[(i + 1) % Nloc, j]
+    left  = s[i, (j - 1) % Nloc]
+    right = s[i, (j + 1) % Nloc]
+    return up + down + left + right
+
+def delta_E_flip(i, j, s, J=1.0):
+    return 2.0 * J * s[i, j] * _sum_vecinos(i, j, s)
+
+def energia_total(s, J=1.0):
+    right = np.roll(s, shift=-1, axis=1)
+    down  = np.roll(s, shift=-1, axis=0)
+    return -J * np.sum(s * right + s * down)
+
+def metropolis_mcss(s, beta, H_current, S_current, rng):
+    """Un MCSS ~ N^2 propuestas aleatorias."""
+    Nloc = s.shape[0]
+    for _ in range(Nloc * 2):
+        i = rng.integers(0, Nloc)
+        j = rng.integers(0, Nloc)
+        dE = delta_E_flip(i, j, s, J=J)
+        if dE <= 0.0:
+            s_old = s[i, j]
+            s[i, j] = -s[i, j]
+            H_current += dE
+            S_current += -2 * s_old
+        else:
+            if rng.random() < np.exp(-beta * dE):
+                s_old = s[i, j]
+                s[i, j] = -s[i, j]
+                H_current += dE
+                S_current += -2 * s_old
+    return s, H_current, S_current
+
+# --- Inicialización ---
+H_current = energia_total(sigma, J=J)
+S_current = int(np.sum(sigma))
+
+# Guardamos estado inicial (para la figura de "antes")
+sigma_before = sigma.copy()
+
+# --- Buffers para series temporales (t = 0 ... TOTAL_EPOCHS) ---
+E_series  = np.empty(TOTAL_EPOCHS + 1, dtype=float)  # energía por espín
+M_series  = np.empty(TOTAL_EPOCHS + 1, dtype=float)  # magnetización por espín
+E_series[0] = H_current / (N * N)
+M_series[0] = S_current / (N * N)
+
+# --- Evolución registrando E(t) y M(t) ---
+for t in range(1, TOTAL_EPOCHS + 1):
+    sigma, H_current, S_current = metropolis_mcss(sigma, beta, H_current, S_current, rng)
+    E_series[t] = H_current / (N * N)
+    M_series[t] = S_current / (N * N)
+
+# Guardamos estado final (para la figura de "después")
+sigma_after = sigma.copy()
+
+# --- PDF con: (1) Antes, (2) E & M vs épocas, (3) Después ---
 with PdfPages('1.a.pdf') as pdf:
-    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+    # (1) Antes
+    fig1, ax1 = plt.subplots(figsize=(6.0, 5.5))
+    ax1.imshow((sigma_before > 0).astype(int), cmap=SPIN_CMAP, vmin=0, vmax=1, interpolation='nearest')
+    ax1.set_title(f'Antes (t = 0) — Ising 2D N={N}, J=1, β={beta}')
+    ax1.set_xticks([]); ax1.set_yticks([])
+    for sp in ax1.spines.values(): sp.set_edgecolor((0,0,0,0.3))
+    fig1.tight_layout(); pdf.savefig(fig1); plt.close(fig1)
 
-    # Energía (negro) y magnetización (azul)
-    ax.plot(t_list, e_list, color='k', lw=1, label=r'$e(t)=H/(4N^2)$')
-    ax.plot(t_list, m_list, color='b', lw=1, label=r'$m(t)=\frac{1}{N^2}\sum \sigma$')
+    # (2) Energía y Magnetización vs épocas
+    fig2, (axE, axM) = plt.subplots(2, 1, figsize=(7.5, 6.5), sharex=True)
+    epochs = np.arange(TOTAL_EPOCHS + 1)
 
-    ax.set_xlabel('t (MCSS)')
-    ax.set_ylabel('Observables normalizados')
-    ax.set_title(fr'Ising 2D (N={N}, J=1, $\beta={beta}$) — Relajación y muestreo')
-    ax.legend()
+    axE.plot(epochs, E_series, lw=1.2)
+    axE.set_ylabel('Energía por espín')
+    axE.grid(alpha=0.2)
 
-    fig.tight_layout()
-    pdf.savefig(fig)
-    plt.close(fig)
+    axM.plot(epochs, M_series, lw=1.2)
+    axM.set_xlabel('Épocas (MCSS)')
+    axM.set_ylabel('Magnetización por espín')
+    axM.grid(alpha=0.2)
+
+    fig2.suptitle(f'Ising 2D (N={N}, J=1, β={beta}) — Evolución de E y M', y=0.98)
+    fig2.tight_layout(rect=[0,0,1,0.96]); pdf.savefig(fig2); plt.close(fig2)
+
+    # (3) Después
+    fig3, ax3 = plt.subplots(figsize=(6.0, 5.5))
+    ax3.imshow((sigma_after > 0).astype(int), cmap=SPIN_CMAP, vmin=0, vmax=1, interpolation='nearest')
+    ax3.set_title(f'Después (t = {TOTAL_EPOCHS}) — Ising 2D N={N}, J=1, β={beta}')
+    ax3.set_xticks([]); ax3.set_yticks([])
+    for sp in ax3.spines.values(): sp.set_edgecolor((0,0,0,0.3))
+    fig3.tight_layout(); pdf.savefig(fig3); plt.close(fig3)
+
+
 
 
 
