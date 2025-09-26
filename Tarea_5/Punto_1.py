@@ -165,17 +165,14 @@ with PdfPages('1.a.pdf') as pdf:
     fig1.tight_layout(); pdf.savefig(fig1); plt.close(fig1)
 
     # (2) Energía y Magnetización vs épocas
-    fig2, (axE, axM) = plt.subplots(2, 1, figsize=(7.5, 6.5), sharex=True)
+    
+    fig2, ax2 = plt.subplots(figsize=(6.0, 5.5))
     epochs = np.arange(TOTAL_EPOCHS + 1)
 
-    axE.plot(epochs, E_series, lw=1.2)
-    axE.set_ylabel('Energía por espín')
-    axE.grid(alpha=0.2)
-
-    axM.plot(epochs, M_series, lw=1.2)
-    axM.set_xlabel('Épocas (MCSS)')
-    axM.set_ylabel('Magnetización por espín')
-    axM.grid(alpha=0.2)
+    ax2.plot(epochs, E_series, lw=1.2, color='blue', label='Energía')
+    ax2.plot(epochs, M_series, lw=1.2, color='red', label='Magnetización')
+    ax2.set_xlabel('Épocas (MCSS)')
+    ax2.grid(alpha=0.2)
 
     fig2.suptitle(f'Ising 2D (N={N}, J=1, β={beta}) — Evolución de E y M', y=0.98)
     fig2.tight_layout(rect=[0,0,1,0.96]); pdf.savefig(fig2); plt.close(fig2)
