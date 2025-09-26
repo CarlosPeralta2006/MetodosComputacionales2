@@ -93,7 +93,7 @@ from matplotlib.colors import ListedColormap
 SPIN_CMAP = ListedColormap(["#1f77b4", "#d62728"])
 
 rng = np.random.default_rng(seed)
-sigma = rng.choice((-1, +1), size=(N, N), replace=True).astype(np.int8)
+sigma = rng.choice((-1, +1), size=(N, N), replace=True).astype(np.int16)
 
 # --- Utilidades ---
 def _sum_vecinos(i, j, s):
