@@ -82,7 +82,7 @@ sigma_after = sigma.copy()
 # 1a — Registrar E(t) y M(t) y graficar vs épocas (además de guardar solo antes/después)
 
 # --- Parámetros (puedes conservar los tuyos) ---
-N      = 64
+N      = 50
 J      = 1.0
 beta   = 0.50
 seed   = 12345
